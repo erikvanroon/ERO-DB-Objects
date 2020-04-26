@@ -1,0 +1,120 @@
+prompt ===> ero_fill
+create or replace package ero_fill
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_fill
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Creation of framed messages
+  -- *********************************************************************************
+
+  cn_package_name     constant   ero_types.st_identifier          := $$plsql_unit;
+  
+  -- This functionality can be used to show output within a frame build with a certain character
+  -- Example:
+  --     ############################
+  --     # This is the output       #
+  --     #                          #
+  --     # And here is another line #
+  --     ############################
+
+
+  -- Sets the character that is used to build the frame
+  -- If not explicitly set through this procedure '#' will be used by default.
+  -- If null is assigned to the parameter the border character for the frame will be reset to its default
+  procedure set_border
+  (p_chr   in  varchar2
+  );
+
+
+  -- Sets the length of the line including the frame
+  -- If not explicitly set through this procedure a linesize of 80 will be used by default.
+  -- The linesize must be at least 5 (= 1 character + frame left and right)
+  -- If null is assigned to the parameter the linesize will be reset to its default
+  procedure set_linesize
+  (p_size  in  integer
+  );
+
+
+  -- If wanted, sets the file to which output should be written.
+  -- If no file has been set, or if a file has been set that hasn't been opened
+  -- output will be written to screen via dbms_output
+  procedure to_file
+  (p_file  in  utl_file.file_type
+  );
+
+
+  -- Sets that output should be put on screen via dbms_output (default)
+  procedure to_screen;
+
+
+  -- Sends a line of linesize length (set with set_linesize), consisting of border characters (set with set_border) to output
+  -- So, given: set_border('^'); 
+  --            set_linesize(10);
+  -- borderline; would produce: '^^^^^^^^^^'
+  procedure borderline;
+
+
+  -- Function version of the procedure by the same name. Result is identical, but
+  -- isn't put to screen or file but returned as function return value
+  function  borderline
+  return varchar2;
+
+
+  -- Will fill the supplied line to linesize with the line prefixed by a border character 
+  -- and a space, and suffixed by a space and a border character.
+  -- If the supplied line contains end-of-lines (chr (10)) the line will be split over 
+  -- multiple lines, based on these end-of-lines.
+  -- Lines that are longer than linesize will be split up over multiple lines while trying 
+  -- not to break within words.
+  -- If second (optional) parameter is given an integer > 0 then if lines are split up over 
+  -- multiple lines, the followup lines will be indented by that amount of spaces, respecting 
+  -- that always at least 1 character of the line should be printed
+  procedure fill
+  (p_line         in  varchar2
+  ,p_indentation  in  integer    default 0
+  );
+
+
+  -- Function version of the procedure by the same name. Result is identical, but
+  -- isn't put to screen or file but returned as function return value
+  -- If inputline has multiple ooutputlines as a result the function will return them as
+  -- a single outputline, separated by end-of-lines (chr(10))
+  function  fill
+  (p_line         in  varchar2
+  ,p_indentation  in  integer    default 0
+  )
+  return varchar2;
+
+
+  -- Returns True if a file has been set for the output of the fill-functionality
+  -- and False if dbms_output is the outputtype.
+  function  output_to_file
+  return boolean;
+
+
+  -- Returns the linesize that has been set
+  function  get_linesize
+  return integer;
+
+
+  --  Returns the border character that has been set
+  function  get_border
+  return varchar2;
+
+
+end ero_fill;
+/
+sho err

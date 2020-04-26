@@ -1,0 +1,844 @@
+prompt ===> ero_file
+create or replace package body ero_file
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_file
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Functionality for manipulating files
+  -- ********************************************************************************
+
+  cn_maxlinesize      constant  integer                   := 32767;
+
+  cn_nested           constant  varchar2(2)               := 'nt' ;
+  cn_associative      constant  varchar2(2)               := 'aa' ;
+
+
+  type at_dir    is table of ero_types.st_maxchar  index by ero_types.st_maxchar;
+  a_dir   at_dir;
+
+
+  v_filehandle           utl_file.file_type;
+
+
+  procedure check_nested_table_initialised
+  (p_nested      in  nt_ero_maxchar
+  ,p_unit        in  varchar2
+  )
+  is
+    v_dummy    integer;
+
+    e_uninit_collection   exception;
+    pragma exception_init (e_uninit_collection,-6531);    -- reference to uninitialized collection
+  begin   -- check_nested_table_initialised
+    v_dummy := p_nested.count;
+  exception
+    when e_uninit_collection
+    then
+      ero_utl.rae (p_unit||' is called with a uninitialized collection as parameter');
+  end check_nested_table_initialised;
+
+
+  procedure generic_file2tab
+  (p_location     in      varchar2
+  ,p_file         in      varchar2
+  ,p_type_output  in      varchar2
+  ,p_associative  in out  at_file
+  ,p_nested       in out  nt_ero_maxchar
+  ,p_lines        in out  integer
+  )
+  is
+    v_line         ero_types.st_maxchar;
+    v_start_count  integer  := 0;
+
+    function collection_count
+    return integer
+    is
+    begin   -- collection_count
+      return (case p_type_output
+                when cn_associative      then p_associative.count
+                when cn_nested           then p_nested.count
+                else                          null
+              end
+             );
+    end collection_count;
+
+  begin   -- generic_file2tab
+    if p_type_output = cn_nested
+    then
+      check_nested_table_initialised 
+        (p_nested => p_nested
+        ,p_unit   => 'file2tab'
+        );
+    end if;
+
+    if not file_exists(p_location,p_file)
+    then
+      ero_utl.rae ('File '||
+                   ero_directory.trailing_dirdelimiter
+                     (p_location
+                     ,ero_directory.cn_endslash_wanted
+                     )||
+                   p_file||
+                   ' does not exist.'
+                  );
+    end if;
+
+    v_start_count := collection_count;
+
+    v_filehandle := utl_file.fopen (ero_directory.trailing_dirdelimiter
+                                      (p_location
+                                      ,ero_directory.cn_endslash_wanted
+                                      )
+                                   ,p_file
+                                   ,ero_const.cn_readmode
+                                   ,cn_maxlinesize
+                                   );
+
+    begin
+      loop  -- Unti exception no_data_found is raised (indicating end of file)
+        -- read line
+        utl_file.get_line (v_filehandle
+                          ,v_line
+                          );
+
+        -- Add line to collection
+        if    p_type_output = cn_associative
+        then
+          p_associative(coalesce(p_associative.last,0)+1) := v_line;
+        elsif p_type_output = cn_nested
+        then
+          p_nested.extend;
+          p_nested(p_nested.last) := v_line;
+        end if;
+      end loop;
+
+    exception
+      when no_data_found          -- end of file reached
+      then
+        null;
+    end;
+    silent_close (v_filehandle);
+
+    p_lines := collection_count - v_start_count;
+
+  exception
+    when others
+    then
+      silent_close (v_filehandle);
+      raise;
+  end generic_file2tab;
+
+
+  procedure generic_tab2file
+  (p_location     in   varchar2
+  ,p_file         in   varchar2
+  ,p_type_input   in   varchar2
+  ,p_associative  in   at_file
+  ,p_nested       in   nt_ero_maxchar
+  ,p_mode         in   varchar2        default cn_tab2file_write
+  )
+  is
+    v_lineno     integer;
+    v_startline  integer;
+    v_endline    integer;
+    v_line       ero_types.st_maxchar;   -- maximum length of a varchar2;
+  begin   -- generic_tab2file
+    if upper(p_mode) not in (cn_tab2file_write
+                            ,cn_tab2file_append
+                            )
+    then
+      ero_utl.rae ('Invalid value ('||upper(p_mode)||') for parameter p_mode. Valid values are: '||cn_tab2file_write||' or '||cn_tab2file_append);
+    end if;
+
+    if p_type_input = cn_nested
+    then
+      check_nested_table_initialised (p_nested  => p_nested
+                                     ,p_unit    => 'tab2file'
+                                     );
+    end if;
+
+    -- If the first record in the collection is not at index=1, then let the file start with empty lines
+    -- until the position of the first recird in the collection that does exist
+    v_startline  := least (case p_type_input
+                             when cn_associative then p_associative.first
+                             when cn_nested      then p_nested.first
+                             else                     1
+                           end
+                          ,1
+                          );
+    v_endline    := case p_type_input
+                      when cn_associative then p_associative.last
+                      when cn_nested      then p_nested.last
+                      else                     0
+                    end
+                    ;
+
+    if coalesce(v_endline,0) > 0
+    then
+      v_filehandle := utl_file.fopen (ero_directory.trailing_dirdelimiter
+                                        (p_location
+                                        ,ero_directory.cn_endslash_wanted
+                                        )
+                                     ,p_file
+                                     ,case p_mode
+                                        when cn_tab2file_write  then ero_const.cn_writemode
+                                        when cn_tab2file_append then ero_const.cn_appendmode
+                                      end
+                                     ,cn_maxlinesize
+                                     );
+
+      for v_lineno in  v_startline .. v_endline
+      loop
+        -- If no record with this index exists add an empty line at this position
+        v_line := case
+                    when p_type_input  = cn_associative
+                     and p_associative.exists(v_lineno)   then p_associative(v_lineno)
+                    when p_type_input  = cn_nested
+                     and p_nested.exists(v_lineno)        then p_nested(v_lineno)
+                    else                                        null
+                  end;
+
+        if v_lineno = v_endline
+        then
+          utl_file.put (v_filehandle
+                       ,v_line
+                       );
+        else
+          utl_file.put_line (v_filehandle
+                            ,v_line
+                            );
+        end if;
+      end loop;
+
+      silent_close (v_filehandle);
+    end if;
+  exception
+    when others
+    then
+      silent_close (v_filehandle);
+      raise;
+  end generic_tab2file;
+
+
+  procedure silent_close
+  (p_file  in  utl_file.file_type
+  )
+  is
+    -- Close the file if it's open
+    v_file  utl_file.file_type := p_file;
+  begin   -- silent_close
+    if utl_file.is_open (v_file)
+    then
+      utl_file.fclose (v_file);
+    end if;
+  end silent_close;
+
+
+  procedure file2tab
+  (p_location     in      varchar2
+  ,p_file         in      varchar2
+  ,p_table        in out  at_file
+  ,p_lines        in out  integer
+  )
+  is
+    n_dummy   nt_ero_maxchar;
+  begin   -- file2tab
+    generic_file2tab
+       (p_location     => p_location       -- in
+       ,p_file         => p_file           -- in
+       ,p_type_output  => cn_associative   -- in
+       ,p_associative  => p_table          -- in out
+       ,p_nested       => n_dummy          -- in out
+       ,p_lines        => p_lines          -- in out
+       );
+  end file2tab;
+
+
+  procedure file2tab
+  (p_location     in      varchar2
+  ,p_file         in      varchar2
+  ,p_table        in out  nt_ero_maxchar
+  ,p_lines        in out  integer
+  )
+  is
+    a_dummy   at_file;
+  begin   -- file2tab
+    generic_file2tab
+       (p_location     => p_location       -- in
+       ,p_file         => p_file           -- in
+       ,p_type_output  => cn_nested        -- in
+       ,p_nested       => p_table          -- in out
+       ,p_associative  => a_dummy          -- in out
+       ,p_lines        => p_lines          -- in out
+       );
+  end file2tab;
+
+
+  procedure tab2file
+  (p_location     in   varchar2
+  ,p_file         in   varchar2
+  ,p_table        in   at_file
+  ,p_mode         in   varchar2        default cn_tab2file_write
+  )
+  is
+    n_dummy   nt_ero_maxchar;
+  begin   -- tab2file
+    generic_tab2file
+      (p_location     => p_location       -- in
+      ,p_file         => p_file           -- in
+      ,p_type_input   => cn_associative   -- in
+      ,p_associative  => p_table          -- in
+      ,p_nested       => n_dummy          -- in
+      ,p_mode         => p_mode           -- in
+      );
+  end tab2file;
+
+
+  procedure tab2file
+  (p_location     in   varchar2
+  ,p_file         in   varchar2
+  ,p_table        in   nt_ero_maxchar
+  ,p_mode         in   varchar2        default cn_tab2file_write
+  )
+  is
+    a_dummy   at_file;
+  begin   -- tab2file
+    generic_tab2file
+      (p_location     => p_location       -- in
+      ,p_file         => p_file           -- in
+      ,p_type_input   => cn_nested        -- in
+      ,p_associative  => a_dummy          -- in
+      ,p_nested       => p_table          -- in
+      ,p_mode         => p_mode           -- in
+      );
+  end tab2file;
+
+
+  function file_exists
+  (p_location     in   varchar2
+  ,p_file         in   varchar2
+  )
+  return boolean
+  is
+  begin   -- file_exists
+    v_filehandle := utl_file.fopen (ero_directory.trailing_dirdelimiter
+                                      (p_location
+                                      ,ero_directory.cn_endslash_wanted
+                                      )
+                                   ,p_file
+                                   ,ero_const.cn_readmode
+                                   ,cn_maxlinesize
+                                   );
+
+    if utl_file.is_open (v_filehandle)
+    then
+      silent_close (v_filehandle);
+      return (true);
+    else
+      return (false);
+    end if;
+  exception
+    when others
+    then
+      begin
+        silent_close (v_filehandle);
+      exception
+        when others
+        then
+          null;
+      end;
+      return (false);
+  end file_exists;
+
+
+  function no_of_lines
+  (p_location     in   varchar2
+  ,p_file         in   varchar2
+  )
+  return integer
+  is
+    a_file   at_file;
+    v_lines   integer;
+  begin   -- no_of_lines
+    file2tab (p_location
+             ,p_file
+             ,a_file
+             ,v_lines
+             );
+
+    return (v_lines);
+  exception
+    when others
+    then
+      return (-1);
+  end no_of_lines;
+
+
+  function get_file_line
+  (p_location     in   varchar2
+  ,p_file         in   varchar2
+  ,p_lineno       in   integer
+  )
+  return varchar2
+  is
+    a_file    at_file;
+    v_lines   integer;
+  begin   -- get_file_line
+    file2tab (p_location
+             ,p_file
+             ,a_file
+             ,v_lines
+             );
+
+    if a_file.exists (p_lineno)
+    then
+      return (a_file(p_lineno));
+    else
+      return (null);
+    end if;
+  end get_file_line;
+
+
+  function get_file_line
+  (p_location     in   varchar2
+  ,p_file         in   varchar2
+  ,p_firstline    in   integer
+  ,p_lastline     in   integer
+  )
+  return at_file
+  is
+    a_file          at_file;
+    a_result        at_file;
+    v_lines         integer;
+    v_range_start   integer;
+    v_range_end     integer;
+    v_filefirst     integer;
+    v_filelast      integer;
+  begin   -- get_file_line
+    file2tab (p_location
+             ,p_file
+             ,a_file
+             ,v_lines
+             );
+
+    -- lines in file
+    v_filefirst  := a_file.first;
+    v_filelast   := a_file.last;
+
+    -- determine range
+    v_range_start := coalesce(p_firstline,a_file.first );
+    v_range_end   := coalesce(p_lastline ,a_file.last  );
+
+    if  v_range_start <= v_filelast
+    and v_range_end   >= v_filefirst
+    and v_range_start <= v_range_end
+    then
+      -- specified range overlaps at least part of the lines in the file
+      -- This part is what needs to be returned
+      v_range_start := greatest(v_range_start,v_filefirst);
+      v_range_end   := least   (v_range_end  ,v_filelast );
+
+      for i in v_range_start .. v_range_end
+      loop
+        a_result(coalesce(a_result.last,0)+1) := a_file(i);
+      end loop;
+    end if;
+
+    return (a_result);
+  end get_file_line;
+
+
+  procedure set_file_line
+  (p_location  in   varchar2
+  ,p_file      in   varchar2
+  ,p_lineno    in   integer
+  ,p_line      in   at_file
+  )
+  is
+    a_file     at_file;
+    v_lines    integer;
+    v_lineno   integer;
+  begin   -- set_file_line
+    -- If the file exists it needs to be read in order to change/add lines
+    -- If it doesn't exist yet, it will be created
+    if file_exists (p_location ,p_file)
+    then
+      file2tab (p_location
+               ,p_file
+               ,a_file
+               ,v_lines
+               );
+    end if;
+
+    v_lineno := p_line.first;
+
+    while v_lineno is not null
+    loop
+      a_file(p_lineno + v_lineno - 1) := p_line(v_lineno);
+      v_lineno := p_line.next(v_lineno);
+    end loop;
+
+    tab2file (p_location
+             ,p_file
+             ,a_file
+             );
+
+  end set_file_line;
+
+
+  procedure set_file_line
+  (p_location  in   varchar2
+  ,p_file      in   varchar2
+  ,p_lineno    in   integer
+  ,p_line      in   varchar2
+  )
+  is
+    a_upd  at_file;
+  begin   -- set_file_line
+    a_upd (1) := p_line;
+
+    set_file_line
+       (p_location  => p_location
+       ,p_file      => p_file
+       ,p_lineno    => p_lineno
+       ,p_line      => a_upd
+       );
+
+  end set_file_line;
+
+
+  procedure insert_file_line
+  (p_location  in   varchar2
+  ,p_file      in   varchar2
+  ,p_lineno    in   integer
+  ,p_line      in   at_file
+  )
+  is
+    a_file       at_file;
+    v_lines      integer;
+
+    v_current    integer;
+    v_linecount  integer;
+    v_shiftcount integer;
+  begin   -- insert_file_line
+    if p_line.count > 0
+    then
+      -- If the file exists it needs to be read in order to add lines
+      -- If it doesn't exist yet, it will be created
+      if file_exists (p_location ,p_file)
+      then
+        file2tab (p_location
+                 ,p_file
+                 ,a_file
+                 ,v_lines
+                 );
+      end if;
+
+      v_current    := a_file.last;
+
+      -- linecount is deliberately NOT p_line.count because that disregards the possibility of the collection 
+      -- being sparse, which should result in empty lines in the file where 'holes' in the collection exist
+      v_linecount  := p_line.last - p_line.first + 1;
+      v_shiftcount := case sign(p_lineno - a_file.first)
+                        when -1 then v_linecount
+                        else v_linecount - (p_line.first - p_lineno)
+                      end;
+
+      -- Move all lines at or below the specified liner, unless specified line is before first line in file
+      while v_current              >= p_lineno
+        and p_lineno + v_linecount >= a_file.first
+      loop
+        if a_file.exists(v_current)
+        then
+          a_file(v_current + v_shiftcount) := a_file(v_current);
+          a_file.delete(v_current);
+        end if;
+        ero_utl.dec(v_current);
+      end loop;
+
+      for i in p_line.first .. p_line.last
+      loop
+        if p_line.exists(i)
+        then
+          a_file(p_lineno + i - 1) := p_line(i);
+        else
+          a_file(p_lineno + i - 1) := null;
+        end if;
+      end loop;
+
+      tab2file (p_location
+               ,p_file
+               ,a_file
+               );
+    end if;
+  end insert_file_line;
+
+
+  procedure insert_file_line
+  (p_location  in   varchar2
+  ,p_file      in   varchar2
+  ,p_lineno    in   integer
+  ,p_line      in   varchar2
+  )
+  is
+    a_upd  at_file;
+  begin   -- insert_file_line
+    a_upd (1) := p_line;
+
+    insert_file_line
+       (p_location  => p_location
+       ,p_file      => p_file
+       ,p_lineno    => p_lineno
+       ,p_line      => a_upd
+       );
+
+  end insert_file_line;
+
+
+  procedure delete_file_line
+  (p_location    in   varchar2
+  ,p_file        in   varchar2
+  ,p_line_start  in   integer
+  ,p_line_end    in   integer    default null
+  )
+  is
+    a_file     at_file;
+    v_lines    integer;
+
+    v_range_start integer;
+    v_range_end   integer;
+    v_movefrom    integer;
+    v_moveto      integer;
+  begin   -- delete_file_line
+    if  p_line_start is null
+    and p_line_end   is null
+    then
+      ero_utl.rae ('No lines to be deleted supplied');
+    end if;
+
+    if file_exists (p_location ,p_file)
+    then
+      file2tab (p_location
+               ,p_file
+               ,a_file
+               ,v_lines
+               );
+
+      -- Determine the range that is to be deleted.
+      -- If start or end is null take the associated boundary of the file
+      -- If start > end, they should be reversed
+      v_range_start := least   (coalesce(p_line_start,a_file.first)
+                               ,coalesce(p_line_end  ,a_file.last )
+                               );
+      v_range_end   := greatest(coalesce(p_line_start,a_file.first)
+                               ,coalesce(p_line_end  ,a_file.last )
+                               );
+
+      -- If the range overlaps the file, but (one or both of) its boundaries are outside the table boundaries
+      -- the range must be changed such that the boundary that is 'too wide' is adjusted to its corresponding 
+      -- file boundary.
+      -- If the range doe not overlaps the file no action should be taken on the file
+      if  v_range_end   >= a_file.first
+      and v_range_start <= a_file.last
+      then
+        v_range_start := greatest(v_range_start,a_file.first);
+        v_range_end   := least   (v_range_end  ,a_file.last );
+
+        -- Determine the index of the first record that needs to be moved (v_movefrom) 
+        -- and the index to which it should be moved (v_moveto).
+        -- v_moveto is the index of the first record of the range that needs to be deleted
+        -- v_movefrom is the upper boundary of the range + 1.
+        v_movefrom := v_range_end + 1;
+        v_moveto   := v_range_start;
+
+        while v_movefrom <= a_file.last
+        loop
+          a_file(v_moveto) := a_file(v_movefrom);
+
+          ero_utl.inc(v_movefrom);
+          ero_utl.inc(v_moveto);
+        end loop;
+
+        -- Now v_moveto contains the index of the first line that needs to be deleted
+        a_file.delete (v_moveto,a_file.last);
+
+        tab2file (p_location
+                 ,p_file
+                 ,a_file
+                 );
+
+      end if;
+    end if;
+  end delete_file_line;
+
+
+  procedure get_next_line
+  (p_file  in      utl_file.file_type
+  ,p_line     out  varchar2
+  ,p_eof      out  boolean
+  )
+  is
+  begin   -- get_next_line
+    utl_file.get_line (p_file,p_line);
+    p_eof  := false;
+  exception
+    when no_data_found
+    then
+      p_line := null;
+      p_eof  := true;
+  end get_next_line;
+
+
+  function get_column
+  (p_line       in  varchar2
+  ,p_column     in  pls_integer
+  ,p_separator  in  varchar2     default ';'
+  )
+  return varchar2
+  is
+    v_columns   ero_types.st_maxchar;
+    v_sep_left  integer;
+    v_sep_right integer;
+    v_start     integer;
+    v_length    integer;
+  begin   -- get_column
+    -- Retrieve the desired columnvalue from the line and return it
+
+    -- First, add a separator to the start and end of the line
+    v_columns := p_separator||p_line||p_separator;
+
+    -- Now column with sequence number X will always be between separator X and X+1
+    v_sep_left  := instr(v_columns,p_separator,1,p_column  );
+    v_sep_right := instr(v_columns,p_separator,1,p_column+1);
+
+    if v_sep_left  = 0
+    or v_sep_right = 0
+    then
+      ero_utl.rae ('Error in call to get_column: Less than'||to_char(p_column)||' columns in line: '||p_line
+                  );
+    end if;
+
+    v_start  := v_sep_left + 1;
+    v_length := v_sep_right - v_start;
+
+    return (substr(v_columns
+                  ,v_start
+                  ,v_length
+                  )
+           );
+
+  end get_column;
+
+
+  procedure split_filename
+  (p_name       in      ero_types.st_maxchar
+  ,p_basename   in out  ero_types.st_maxchar
+  ,p_extension  in out  ero_types.st_maxchar
+  ,p_path       in out  ero_types.st_maxchar
+  )
+  is
+    v_name     ero_types.st_maxchar;
+    v_pos_dot  integer;
+    v_pos_dir  integer;
+  begin   -- split_filename
+    v_name := p_name;
+
+    -- Determine position of last directory delimiter
+    v_pos_dir := instr(v_name,ero_const.cn_dirdelimiter,-1);
+
+    -- Split into path and filename
+    if v_pos_dir > 0
+    then
+      p_path := substr(v_name,1,v_pos_dir - 1);
+      v_name := substr(v_name,v_pos_dir + 1);
+    else
+      p_path := null;
+    end if;
+
+    -- Determine position of last dot in filename
+    v_pos_dot := instr(v_name,ero_const.cn_dot,-1);
+    
+    -- split filename into basename and extension
+    if v_pos_dot > 0
+    then
+      p_basename  := substr(v_name,1,v_pos_dot - 1);
+      p_extension := substr(v_name,v_pos_dot + 1);
+    else
+      p_basename  := v_name;
+      p_extension := null;
+    end if;
+  end split_filename;
+
+
+  function file_basename
+  (p_name   in  ero_types.st_maxchar
+  )
+  return ero_types.st_maxchar
+  is
+    v_basename   ero_types.st_maxchar;
+    v_extension  ero_types.st_maxchar;
+    v_path       ero_types.st_maxchar;
+  begin   -- file_basename
+    split_filename (p_name      => p_name
+                   ,p_basename  => v_basename
+                   ,p_extension => v_extension
+                   ,p_path      => v_path
+                   );
+
+    return (v_basename);
+  end file_basename;
+
+
+  function file_extension
+  (p_name   in  ero_types.st_maxchar
+  )
+  return ero_types.st_maxchar
+  is
+    v_basename   ero_types.st_maxchar;
+    v_extension  ero_types.st_maxchar;
+    v_path       ero_types.st_maxchar;
+  begin   -- file_extension
+    split_filename (p_name      => p_name
+                   ,p_basename  => v_basename
+                   ,p_extension => v_extension
+                   ,p_path      => v_path
+                   );
+
+    return (v_extension);
+  end file_extension;
+
+
+  function file_path
+  (p_name   in  ero_types.st_maxchar
+  )
+  return ero_types.st_maxchar
+  is
+    v_basename   ero_types.st_maxchar;
+    v_extension  ero_types.st_maxchar;
+    v_path       ero_types.st_maxchar;
+  begin   -- file_path
+    split_filename (p_name      => p_name
+                   ,p_basename  => v_basename
+                   ,p_extension => v_extension
+                   ,p_path      => v_path
+                   );
+
+    return (v_path);
+  end file_path;
+
+
+end  ero_file;
+/
+sho err

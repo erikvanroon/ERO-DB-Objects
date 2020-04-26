@@ -1,0 +1,87 @@
+prompt ===> ero_periods
+create or replace package ero_periods
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- *********************************************************************************
+  -- * Name module : ero_periods
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : 'grafic' display of a timeline of a set of periods
+  -- *********************************************************************************
+
+  cn_package_name     constant   ero_types.st_identifier          := $$plsql_unit;
+  
+  -- Procedure turns debug modus on or off.
+  -- By default the debug modus is off.
+  -- If this procedure is called with parameter value TRUE or NULL, or without parametervalue, the debu mode
+  -- will be turned on. If called with parameter value FALSE it will be turned off.
+  procedure set_debugmode
+  (p_debug_on  in  boolean  default true
+  );
+
+
+  -- Procedure adds a period to the list of periodes that need to be displayed
+  -- See comments at period_graph for an example
+  procedure add_period
+  (p_startdate   in  date
+  ,p_enddate     in  date
+  );
+
+
+  -- Procedure empties the list that was previously populated with periods by calling add_period.
+  -- This procedure only needs to be called in case a defined list doesn't have to be displayed after all
+  -- If period_graph is called, then after displaying the list of periods the list will automatically be cleared
+  procedure clear_period_list;
+
+
+  -- Procedure shows the list of defined periods on screen
+  procedure list_periods;
+
+
+  -- Procedure shows on screen a timeline display of the periods which are defined by use of add_period, making
+  -- it easier to spot the existence of connecting or overlapping periods
+  -- Periods with equal start and end date, if present, will be displayed on a separate (the first) line as
+  -- single vertical bars without connecting dashes in between.
+
+  -- Example:
+  --     begin
+  --       ero_periods.add_period (p_startdate => TO_DATE('12-03-2005','DD-MM-YYYY')
+  --                              ,p_enddate   => TO_DATE('12-03-2005','DD-MM-YYYY')
+  --                              );
+  --       ero_periods.add_period (p_startdate => TO_DATE('31-12-2004','DD-MM-YYYY')
+  --                              ,p_enddate   => TO_DATE('04-11-2005','DD-MM-YYYY')
+  --                              );
+  --       ero_periods.add_period (p_startdate => TO_DATE('31-01-2006','DD-MM-YYYY')
+  --                              ,p_enddate   => TO_DATE('04-09-2006','DD-MM-YYYY')
+  --                              );
+  --       ero_periods.add_period (p_startdate => TO_DATE('12-03-2006','DD-MM-YYYY')
+  --                              ,p_enddate   => TO_DATE('12-03-2006','DD-MM-YYYY')
+  --                              );
+  --       ero_periods.add_period (p_startdate => TO_DATE('23-12-2003','DD-MM-YYYY')
+  --                              ,p_enddate   => TO_DATE('31-12-2004','DD-MM-YYYY')
+  --                              );
+  --       ero_periods.add_period (p_startdate => TO_DATE('27-10-2005','DD-MM-YYYY')
+  --                              ,p_enddate   => TO_DATE('31-01-2006','DD-MM-YYYY')
+  --                              );
+  --       ero_periods.period_graph;
+  --     end;
+  -- Will result in display of:
+  --             |               |
+  --     |---|-----------|   |-------|
+  --                 |-------|
+  procedure period_graph;
+
+end ero_periods;
+/
+sho err

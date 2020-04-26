@@ -1,0 +1,46 @@
+prompt ===> ero_types
+create or replace package ero_types
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- *********************************************************************************
+  -- * Name module : ero_types
+  -- * Version     : Erik van Roon
+  -- * Author      : 02.00
+  -- * Function    : Centralised definition of constants and subtypes
+  -- *********************************************************************************
+
+  -- Subtypes
+  subtype st_maxchar                 is varchar2(32767)                    ;  -- Varchar2 of maximum size
+  subtype st_singlechar              is varchar2(1)                        ;
+  subtype st_doublechar              is varchar2(2)                        ;
+  subtype st_shortstring             is varchar2(100)                      ;
+  subtype st_identifier              is varchar2(128)                      ;  -- for identifier
+  subtype st_identifier_dubbel       is varchar2(257)                      ;  -- for identifier.identifier
+  subtype st_identifier_triple       is varchar2(386)                      ;  -- for identifier.identifier.identifier
+  subtype st_date_as_char            is varchar2(30)                       ;
+  subtype st_format                  is varchar2(100)                      ;  -- for date and number formatmasks
+  subtype st_boolean_string          is varchar2(5)                        ;
+  subtype st_weekday_names           is varchar2(15)                       ;
+  subtype st_daymonth_string         is varchar2(4)                        ;
+  subtype st_physical_path           is all_directories.directory_path%type;  -- Path on filesystem
+  subtype st_dir_object_name         is all_directories.directory_name%type;  -- Name of Oracle Directory Object
+  subtype st_dir_contents_type       is integer                            ;  -- Indicator for the type of list of contents of a directory
+  subtype st_dirlist_type_indicator  is varchar2(4)                        ;  -- For strings that indicate whether an object in a directory is a file or a directory
+
+
+  cn_package_name                 constant  st_identifier  := $$plsql_unit;
+
+end ero_types;
+/
+sho err

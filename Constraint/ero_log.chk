@@ -1,0 +1,11 @@
+prompt ===> ero_log
+alter table ero_log
+add (constraint ero_log_chk001
+     check (logtype in ('I'  -- INFO
+                       ,'W'  -- WARNING
+                       ,'E'  -- ERROR
+                       ,'F'  -- FATAL ERROR
+                       ,'D'  -- DEBUGMESSAGE
+                       )
+           )
+    );

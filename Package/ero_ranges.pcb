@@ -1,0 +1,123 @@
+create or replace package body ero_ranges
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_ranges
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : range calculations
+  -- *********************************************************************************
+
+  procedure get_range
+  (p_value           in      integer
+  ,p_rangesize       in      integer
+  ,p_lower_boundary     out  integer
+  ,p_upper_boundary     out  integer
+  ,p_offset          in      integer  default 1
+  )
+  is
+    v_offset   integer;
+  begin   -- get_range
+    if p_value < p_offset
+    then
+      v_offset := p_offset - (p_rangesize * (trunc(abs(p_value - p_offset)/p_rangesize) + 1)
+                             );
+    else
+      v_offset := p_offset;
+    end if;
+
+    p_lower_boundary := (trunc((p_value - v_offset)/p_rangesize)*p_rangesize) + v_offset;
+    p_upper_boundary := ((trunc((p_value - v_offset)/p_rangesize)+1)*p_rangesize) + v_offset - 1;
+  end get_range;
+
+
+  function range_string
+  (p_value         in  integer
+  ,p_rangesize     in  integer
+  ,p_pad_size      in  integer  default null
+  ,p_offset        in  integer  default 1
+  )
+  return varchar2
+  is
+    v_lower_boundary  integer;
+    v_upper_boundary  integer;
+    v_fill_lower      integer;
+    v_fill_upper      integer;
+    v_result          ero_types.st_maxchar;
+  begin   -- range_string
+    get_range (p_value          =>  p_value           -- in
+              ,p_rangesize      =>  p_rangesize       -- in
+              ,p_lower_boundary =>  v_lower_boundary  --    out
+              ,p_upper_boundary =>  v_upper_boundary  --    out
+              ,p_offset         =>  p_offset          -- in
+              );
+
+    v_fill_lower := greatest (length(to_char(v_lower_boundary))
+                             ,coalesce(p_pad_size,0)
+                             );
+    v_fill_upper := greatest (length(to_char(v_upper_boundary))
+                             ,coalesce(p_pad_size,0)
+                             );
+
+    v_result := lpad(to_char(v_lower_boundary),v_fill_lower,' ')
+                ||' <=> '||
+                lpad(to_char(v_upper_boundary),v_fill_upper,' ')
+                ;
+    return (v_result);
+  end range_string;
+
+
+  function range_from
+  (p_value         in  integer
+  ,p_rangesize     in  integer
+  ,p_offset        in  integer  default 1
+  )
+  return integer
+  is
+    v_lower_boundary    integer;
+    v_upper_boundary    integer;
+  begin   -- range_from
+    get_range (p_value          =>  p_value           -- in
+              ,p_rangesize      =>  p_rangesize       -- in
+              ,p_lower_boundary =>  v_lower_boundary  --    out
+              ,p_upper_boundary =>  v_upper_boundary  --    out
+              ,p_offset         =>  p_offset          -- in
+              );
+
+    return (v_lower_boundary);
+  end range_from;
+
+
+  function range_to
+  (p_value         in  integer
+  ,p_rangesize     in  integer
+  ,p_offset        in  integer  default 1
+  )
+  return integer
+  is
+    v_lower_boundary  integer;
+    v_upper_boundary  integer;
+  begin   -- range_to
+    get_range (p_value          =>  p_value           -- in
+              ,p_rangesize      =>  p_rangesize       -- in
+              ,p_lower_boundary =>  v_lower_boundary  --    out
+              ,p_upper_boundary =>  v_upper_boundary  --    out
+              ,p_offset         =>  p_offset          -- in
+              );
+
+    return (v_upper_boundary);
+  end range_to;
+
+end ero_ranges;
+/
+sho err

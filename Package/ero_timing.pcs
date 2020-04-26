@@ -1,0 +1,86 @@
+prompt ===> ero_timing
+create or replace package ero_timing
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_timing
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Measuring average, maximum, minimum and total runtime of parts of 
+  -- *               plsql code, and number of times these parts are executed
+  -- *********************************************************************************
+
+  subtype st_timingname is ero_types.st_shortstring;
+  subtype st_timingtype is varchar2(10);
+
+  cn_package_name        constant  ero_types.st_identifier   := $$plsql_unit;
+  
+  cn_default_timingname  constant  st_timingname             := '## STANDARD TIMING ##';
+
+
+  -- Procedures set_timing_on and set_timing_off are used to toggle the timing functionality on or off
+  -- If none of the procedures is ever executed timing functionality is ON
+  procedure set_timing_on;
+
+
+  procedure set_timing_off;
+
+
+  -- Function timing_is_on returns a boolean indicating whether the timing functionality is switched on (true)
+  -- or off (false).
+  function timing_is_on
+  return boolean;
+
+
+  -- Procedure marks the start of a timing
+  -- The partameter kan be used to give timings of different parts of the plsql code different names
+  -- allowing them to be measured separately and to be identified by descriptive name.
+  -- If no name is supplied the default timingname is used.
+  procedure start_timing
+  (p_name    in   st_timingname default cn_default_timingname
+  );
+
+
+  -- Procedure marks the end of a timing
+  -- The partameter kan be used to give timings of different parts of the plsql code different names
+  -- allowing them to be measured separately and to be identified by descriptive name.
+  -- If no name is supplied the default timingname is used.
+  -- The name should be identical (case insensitive) to the name of the corresponding start_timing
+  procedure stop_timing
+  (p_name    in   st_timingname default cn_default_timingname
+  );
+
+
+  -- Procedure empties the timing measurements buffer
+  -- If a name of a timing is provided only the measurements of that timing will be cleared
+  -- else all measurements will be cleared
+  procedure clear_timings
+  (p_name    in   st_timingname default null
+  );
+
+
+  -- Procedure shows a summary of all timing measurements in the buffer.
+  -- For each timing the maximum, minimum, total en average runtime, and the number ofexecutions
+  -- is shown.
+  -- If a name is provided only the summary for that timing will be shown.
+  -- By default the measurements for which the summary is shown will afterwards be cleared from the buffer
+  -- If so desired, parameter p_clear can be used to indicate that the measurements should not be cleared (p_clear => FALSE)
+  procedure summary
+  (p_name    in   st_timingname default null
+  ,p_clear   in   boolean       default true
+  );
+
+end ero_timing;
+/
+sho err

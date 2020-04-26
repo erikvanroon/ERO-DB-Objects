@@ -1,0 +1,274 @@
+prompt ===> ero_stopwatch
+create or replace package body ero_stopwatch
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_stopwatch
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : StopWatch functionality
+  -- *********************************************************************************
+
+
+  type at_sw_desc is table of date index by sw_description;
+  a_sw_desc   at_sw_desc;
+
+
+  procedure store_in_collection
+  (p_seqno         in  pls_integer
+  ,p_description   in  sw_description
+  )
+  is
+    -- sysdate to constant, because every time we use sysdate in this procedure, we need the same moment
+    cn_sysdate  constant  date   := sysdate;
+  begin   -- store_in_collection
+    a_sw(p_seqno).description      := p_description;
+    a_sw(p_seqno).moment           := cn_sysdate;
+    a_sw(p_seqno).sec_since_start  := (cn_sysdate - a_sw(a_sw.first).moment) * 24 * 60 * 60;
+    if a_sw.exists(p_seqno-1)
+    then
+      a_sw(p_seqno).sec_since_prev := (cn_sysdate - a_sw(p_seqno-1).moment) * 24 * 60 * 60;
+    else
+      a_sw(p_seqno).sec_since_prev := (cn_sysdate - a_sw(p_seqno).moment) * 24 * 60 * 60;
+    end if;
+
+    a_sw_desc(p_description) := cn_sysdate;
+  end store_in_collection;
+
+
+  function time_diff
+  (p_start  in   date
+  ,p_end    in   date
+  )
+  return varchar2
+  is
+    v_days         integer;
+    v_hours        integer;
+    v_minutes      integer;
+    v_seconds      number ;
+
+    v_result       varchar2(2000);
+  begin   -- time_diff
+    ero_kalender.split_days ((p_end - p_start)
+                            ,v_days
+                            ,v_hours
+                            ,v_minutes
+                            ,v_seconds
+                            );
+
+    if v_days = 1
+    then
+      v_result := to_char(v_days)||' day ';
+    elsif v_days > 1
+    then
+      v_result := to_char(v_days)||' days ';
+    end if;
+
+    v_result := v_result                              ||
+                trim(to_char(v_hours         ,'09')) || ':' ||
+                trim(to_char(v_minutes       ,'09')) || ':' ||
+                trim(to_char(trunc(v_seconds),'09'))
+                ;
+    return (v_result);
+  end time_diff;
+
+
+  procedure clear
+  is
+  begin   -- clear
+    a_sw.delete;
+    a_sw_desc.delete;
+  end clear;
+
+  procedure startup
+  (p_description   in  sw_description  default cn_default_descr_prefix||'1'
+  )
+  is
+  begin   -- startup
+    clear;
+
+    store_in_collection (p_seqno         => 1
+                        ,p_description   => p_description
+                        );
+  end startup;
+
+
+  procedure lap
+  (p_description   in  sw_description  default null
+  )
+  is
+    v_next           pls_integer;
+  begin   -- lap
+    v_next         := coalesce(a_sw.last,0) + 1;
+
+    store_in_collection (p_seqno         => v_next
+                        ,p_description   => coalesce(p_description
+                                                    ,cn_default_descr_prefix||to_char(v_next)
+                                                    )
+                        );
+  end lap;
+
+
+  function all_data
+  return at_sw
+  is
+  begin   -- all_data
+    return (a_sw);
+  end all_data;
+
+
+  function time_passed
+  (p_start    in   pls_integer   default null
+  ,p_stop     in   pls_integer   default null
+  )
+  return varchar2
+  is
+    v_start   date;
+    v_stop    date;
+  begin   -- time_passed
+    if a_sw.count = 0
+    then
+      ero_utl.rae ('Stopwatch was not started, can not determine time passed');
+    end if;
+
+    if p_start is not null
+    then
+      if not a_sw.exists(p_start)
+      then
+        ero_utl.rae ('Specified starttime ('||to_char(p_start)||') can not be found');
+      end if;
+      v_start := a_sw(p_start).moment;
+    else
+      v_start := a_sw(a_sw.first).moment;
+    end if;
+
+    if p_stop is not null
+    then
+      if not a_sw.exists(p_stop)
+      then
+        ero_utl.rae ('Specified stoptime ('||to_char(p_stop)||') can not be found');
+      end if;
+      v_stop  := a_sw(p_stop).moment;
+    else
+      v_stop  := sysdate;
+    end if;
+
+    return (time_diff (p_start  => v_start
+                      ,p_end    => v_stop
+                      )
+           );
+  end time_passed;
+
+
+  function time_passed
+  (p_start   in   varchar2
+  ,p_stop    in   varchar2  default null
+  )
+  return varchar2
+  is
+    v_start   date;
+    v_stop    date;
+  begin   -- time_passed
+    if a_sw_desc.count = 0
+    then
+      ero_utl.rae ('Stopwatch was not started, can not determine time passed');
+    end if;
+
+    if not a_sw_desc.exists(p_start)
+    then
+      ero_utl.rae ('Specified starttime ('||p_start||') can not be found');
+    end if;
+    v_start := a_sw_desc(p_start);
+
+    if p_stop is not null
+    then
+      if not a_sw_desc.exists(p_stop)
+      then
+        ero_utl.rae ('Specified stoptime ('||p_stop||') can not be found');
+      end if;
+      v_stop  := a_sw_desc(p_stop);
+    else
+      v_stop  := sysdate;
+    end if;
+
+    return (time_diff (p_start  => v_start
+                      ,p_end    => v_stop
+                      )
+           );
+  end time_passed;
+
+
+  procedure time_passed
+  (p_start    in   pls_integer   default null
+  ,p_stop     in   pls_integer   default null
+  )
+  is
+    v_line        varchar2(255);
+    v_start_msg   varchar2(255);
+    v_until_msg   varchar2(255);
+    v_time_passed varchar2(255);
+  begin   -- time_passed
+    v_time_passed := time_passed (p_start
+                                 ,p_stop
+                                 );
+    v_line        := ero_utl.repeat('#',40);
+    v_start_msg   := 'From stopwatch moment '||to_char(coalesce(p_start,a_sw.first));
+    if p_stop is null
+    then
+      v_until_msg := 'Until NOW';
+    else
+      v_until_msg := 'Until stopwatch momet '||to_char(p_stop);
+    end if;
+
+    ero_pl.pl (v_line);
+    ero_pl.pl ('Time passed');
+    ero_pl.pl (v_start_msg);
+    ero_pl.pl (v_until_msg);
+    ero_pl.pl ('     '||v_time_passed);
+    ero_pl.pl (v_line);
+  end time_passed;
+
+
+  procedure time_passed
+  (p_start   in   varchar2
+  ,p_stop    in   varchar2  default null
+  )
+  is
+    v_line        varchar2(255);
+    v_start_msg   varchar2(255);
+    v_until_msg   varchar2(255);
+    v_time_passed varchar2(255);
+  begin   -- time_passed
+    v_time_passed := time_passed (p_start
+                                 ,p_stop
+                                 );
+    v_line        := ero_utl.repeat('#',40);
+    v_start_msg   := 'From stopwatch moment "'||p_start||'"';
+    if p_stop is null
+    then
+      v_until_msg := 'Until NOW';
+    else
+      v_until_msg := 'Until stopwatch moment "'||p_stop||'"';
+    end if;
+
+    ero_pl.pl (v_line);
+    ero_pl.pl ('Time passed');
+    ero_pl.pl (v_start_msg);
+    ero_pl.pl (v_until_msg);
+    ero_pl.pl ('     '||v_time_passed);
+    ero_pl.pl (v_line);
+  end time_passed;
+
+end ero_stopwatch;
+/
+sho err

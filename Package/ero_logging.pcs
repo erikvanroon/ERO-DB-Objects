@@ -1,0 +1,119 @@
+prompt ===> ero_logging
+create or replace package ero_logging
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- *********************************************************************************
+  -- * Name module : ero_logging
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Functionality for logging to table ero_log
+  -- *********************************************************************************
+
+  cn_package_name    constant  ero_types.st_identifier   := $$plsql_unit;
+  
+  -- Constanten voor de verschillende logtypes
+  cn_info            constant  ero_log.logtype%type      := 'I';
+  cn_warning         constant  ero_log.logtype%type      := 'W';
+  cn_error           constant  ero_log.logtype%type      := 'E';
+  cn_fatalerror      constant  ero_log.logtype%type      := 'F';
+  cn_debug           constant  ero_log.logtype%type      := 'D';
+
+  -- Constanten for parameter p_debug of procedure debug_switch
+  cn_debug_on        constant  boolean                   := true ;
+  cn_debug_off       constant  boolean                   := false;
+
+
+  -- Turns logging of debug messages on or off
+  -- By default it's off, which results in the message NOT being logged by executing log_debug
+  -- After executing this procedure with parameter p_debug=cn_debug_on (=true) those messages WILL be 
+  -- logged, until the end of the session or until this procedure is executed with 
+  -- parameter p_debug=cn_debug_off (=false)
+  procedure debug_switch
+  (p_debug  in  boolean
+  );
+
+
+  -- Returns a boolean which indicates whether logging of debug messages is currently turned 
+  -- on (true) or off (false)
+  function debugging_turned_on
+  return boolean;
+
+
+  -- Logs the mesage as type 'I' (Info), for the username specified in parameter p_logged_by.
+  -- If no username is specified it will be defaulted to the current schemaname
+  procedure log_info
+  (p_message   in  ero_log.message%type
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  );
+
+
+  -- Logs the mesage as type 'W' (Warning), for the username specified in parameter p_logged_by.
+  -- If no username is specified it will be defaulted to the current schemaname
+  procedure log_warning
+  (p_message   in  ero_log.message%type
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  );
+
+
+  -- Logs the mesage as type 'E' (Error), for the username specified in parameter p_logged_by.
+  -- If no username is specified it will be defaulted to the current schemaname
+  procedure log_error
+  (p_message   in  ero_log.message%type
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  );
+
+
+  -- Logs the mesage as type 'F' (Fatal Error), for the username specified in parameter p_logged_by.
+  -- If no username is specified it will be defaulted to the current schemaname
+  procedure log_fatalerror
+  (p_message   in  ero_log.message%type
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  );
+
+
+  -- Providing logging of debug messages has been turned on, logs the mesage as type 'D' (Debugnfo),
+  -- for the username specified in parameter p_logged_by.
+  -- If no username is specified it will be defaulted to the current schemaname
+  procedure log_debug
+  (p_message   in  ero_log.message%type
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  );
+
+
+  -- Removes logging of specified type and by specified user from the logtable.
+  -- If no logtype is specified logging of all types will be removed, if no user is specified logging
+  -- of the current schema will be removed
+  -- If '%' is specified as user logging of all users will be removed
+  procedure clear_log
+  (p_logtype   in  ero_log.logtype%type    default '%'
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  );
+
+
+  -- Logging of the specified type and specified user will be printed to screen by use of DBMS_OUTPUT
+  -- If no logtype is specified logging of all types will be printed, if no user is specified logging
+  -- of the current schema will be printed
+  -- If '%' is specified as user logging of all users will be printed
+  -- Each logmessage will be printed on a separate line. Each line will be wrapped if it's longer than the 
+  -- specified linesize. If no linesize is specified a default linesize will be used.
+  -- Each logmessage will include: date/time it was logged, logtype and the message
+  procedure getlog
+  (p_logtype   in  ero_log.logtype%type    default '%'
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  ,p_linesize  in  integer                 default null
+  );
+
+end ero_logging;
+/
+sho err

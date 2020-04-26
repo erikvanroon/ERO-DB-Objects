@@ -1,0 +1,71 @@
+prompt ===> ero_trace
+create or replace package ero_trace
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_trace
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : tracing of current session
+  -- *********************************************************************************
+
+  cn_package_name     constant   ero_types.st_identifier          := $$plsql_unit;
+
+  -- Function returnes a boolean, indicating wherther tracing has been turned on (by this package) or not
+  function trace_is_on
+  return boolean
+  ;
+
+
+  -- Function returns the location of the tracefiles
+  function trace_path
+  return ero_types.st_maxchar
+  ;
+
+
+  -- Function returns the name of the tracefile for this session
+  function trace_name
+  return ero_types.st_maxchar
+  ;
+
+
+  -- Function returns the pathname (name including location) of the tracefile for this session
+  function trace_pathname
+  return ero_types.st_maxchar
+  ;
+
+
+  -- Procedure turns tracing on
+  procedure trace_on;
+
+
+  -- Procedure exists in 3 overloaded versions.
+  -- Each turns tracing off.
+  -- One version without parameters.
+  -- One version returns the location and name of the tracefile separately through OUT parameters
+  -- One version returns the pathname (name inclusiding location) of the tracefile through an OUT parameter
+  procedure trace_off;
+
+  procedure trace_off
+  (p_trace_path  out  ero_types.st_maxchar
+  ,p_trace_name  out  ero_types.st_maxchar
+  );
+
+  procedure trace_off
+  (p_trace_pathname   out  ero_types.st_maxchar
+  );
+
+end ero_trace;
+/
+sho err

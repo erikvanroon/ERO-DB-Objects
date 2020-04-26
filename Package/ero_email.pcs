@@ -1,0 +1,49 @@
+prompt ===> ero_email
+create or replace package ero_email
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_email
+  -- * Version     : 01.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Sending email
+  -- *********************************************************************************
+
+  cn_package_name       constant  ero_types.st_identifier  := $$plsql_unit;
+
+
+  type at_mailbody is table of ero_types.st_maxchar index by pls_integer;
+
+
+  -- Send an email.
+  -- the recipients parameter can be a single email address, or multiple email addresses separated by a semicolon
+  -- Procedure is overloaded:
+  -- Either provide the email text (the body) as a single varchar2 line (limited to 32767 bytes) or
+  -- as a collection of lines (each limited to 32767 bytes).
+  procedure send_mail
+  (p_recipients  in  ero_types.st_maxchar
+  ,p_subject     in  ero_types.st_maxchar
+  ,pa_message    in  at_mailbody
+  );
+
+  procedure send_mail
+  (p_recipients  in  ero_types.st_maxchar
+  ,p_subject     in  ero_types.st_maxchar
+  ,p_message     in  ero_types.st_maxchar
+  );
+
+
+end ero_email;
+/
+sho err

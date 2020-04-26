@@ -1,0 +1,101 @@
+prompt ===> my_session
+CREATE OR REPLACE PACKAGE my_session
+   -- Extends some of the functionality of DBMS_SESSION
+   -- and provides access to additional session-level
+   -- information.
+   --
+   -- Author:  John Beresniewicz, Savant Corp
+   -- Created: 07/27/97
+   --
+   -- Compilation Requirements:
+   --
+   -- SELECT on sys.v_$session
+   -- SELECT on sys.v_$sesstat
+   -- SELECT on sys.v_$statname
+   --
+   -- Execution Requirements:
+   --
+   -- ALTER SESSION
+IS
+  -- same as dbms_session.unique_session_id but callable in SQL
+  FUNCTION unique_id
+  RETURN VARCHAR2
+  ;
+  PRAGMA RESTRICT_REFERENCES(unique_id, WNDS,WNPS);
+
+  -- returns session id of current session, callable in SQL
+  FUNCTION sid
+  RETURN NUMBER;
+  PRAGMA RESTRICT_REFERENCES(sid,WNDS)
+  ;
+
+  -- closes any open database links not in use
+  PROCEDURE close_links
+  (force_with_commit_TF IN BOOLEAN DEFAULT FALSE
+  );
+
+  -- loads session data, should be private but needs to assert purity
+  PROCEDURE load_my_session_rec
+  ;
+  PRAGMA RESTRICT_REFERENCES(load_my_session_rec,WNDS);
+
+  -- resets all package states, frees memory and initializes session data
+  PROCEDURE reset
+  ;
+
+  -- returns current value of statistic from V$SESSTAT for this session
+  FUNCTION statval
+  (statname_IN IN VARCHAR2
+  )
+  RETURN NUMBER
+  ;
+
+  -- displays session uga and pga using dbms_output
+  --
+  -- PGA:
+  -- ===
+  -- The Program Global Area (PGA) is a memory region that contains data and control information
+  -- for a single process (server or background). The PGA is made up of the following:
+  -- - Stack Space
+  --   A PGA always contains a stack space, which is memory allocated to hold a session's variables,
+  --   arrays, and other information.
+  -- - Session Information - (UGA)
+  --   A PGA in an instance running without the multi-threaded server (named Shared Server in Oracle9i)
+  --   requires additional memory for the user's session, such as private SQL areas and other information.
+  --   If the instance is running the multi-threaded server, this extra memory is not in the PGA, but is
+  --   instead allocated in the SGA (the Shared Pool).
+  -- - Shared SQL Areas
+  --   Shared SQL areas are always in shared memory areas of the SGA (not the PGA), with or without the
+  --   multi-threaded server.
+  -- - Non-shared and Writable
+  --   The PGA is a non-shared memory area to which a process can write. One PGA is allocated for each
+  --   server process; the PGA is exclusive to a server process and is read and written only by Oracle
+  --   code acting on behalf of that process.
+  --
+  -- UGA:
+  -- ===
+  -- The User Global Area (UGA) is allocated in the PGA for each session connected to Oracle in a
+  -- dedicated server environment. The PGA is memory allocated at the client to hold a stack which contains
+  -- all of the session's variables, etc. In a Shared Server environment, Oracle allocates this memory in
+  -- the Shapred Pool (the shared pool is contained in the SGA), for all sessions. This helps to reduce the
+  -- PGA (client) memory footprint of Oracle, but will increase the SGA (shared pool) requirements.
+  --
+  PROCEDURE memory
+  ;
+
+  -- returns session uga and pga
+  PROCEDURE get_memory
+  (p_uga   OUT  NUMBER
+  ,p_pga   OUT  NUMBER
+  );
+
+  -- turns SQL tracing on/off with tag for file identification
+  PROCEDURE set_sql_trace
+  (trace_TF IN  BOOLEAN
+  ,tag_IN  IN  VARCHAR2 DEFAULT USER
+  );
+
+END my_session;
+/
+sho err
+

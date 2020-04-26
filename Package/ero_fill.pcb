@@ -1,0 +1,228 @@
+prompt ===> ero_fill
+create or replace package body ero_fill
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_fill
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Creation of framed messages
+  -- *********************************************************************************
+
+  cn_default_borderchar    constant  varchar2(1)               := ero_const.cn_hash;
+  cn_default_linesize      constant  integer                   := 80 ; -- = including border
+  cn_minimum_linesize      constant  integer                   :=  5 ; -- = (1 borderchar + 1 space) on either side + 1 char to be printed
+
+
+  v_to_file       boolean             := false;
+  v_borderchar    varchar2(1)         := cn_default_borderchar ;
+  v_linesize      integer             := cn_default_linesize   ;
+  v_outputfile    utl_file.file_type;
+
+
+  function internal_linesize
+  return integer
+  is
+  begin   -- internal_linesize
+    return (v_linesize - 4);  -- space left for line within border
+  end internal_linesize;
+
+
+  procedure output
+  (p_line  varchar2
+  )
+  is
+  begin   -- output
+    if v_to_file
+    then
+      if utl_file.is_open (v_outputfile)
+      then
+        utl_file.put_line (v_outputfile
+                          ,p_line
+                          );
+      else
+        v_to_file := false;
+      end if;
+    end if;
+
+    if not v_to_file
+    then
+      ero_pl.pl (p_line);
+    end if;
+  end output;
+
+
+  procedure add_border
+  (p_line  in  out  varchar2
+  )
+  is
+  begin   -- add_border
+    p_line := v_borderchar                ||' '||
+              rpad(coalesce(p_line,' ')
+                  ,internal_linesize
+                  ,' '
+                  )                       ||' '||
+              v_borderchar
+              ;
+  end add_border;
+
+
+  procedure set_border
+  (p_chr   in  varchar2
+  )
+  is
+  begin   -- set_border
+    if length(coalesce(p_chr,cn_default_borderchar)) <> 1
+    then
+      ero_utl.rae ('Invalid border character: ('||p_chr||'). You can not set the border character to be more than one character');
+    end if;
+    v_borderchar := coalesce(p_chr,cn_default_borderchar);
+  end set_border;
+
+
+  procedure set_linesize
+  (p_size  in  integer
+  )
+  is
+  begin   -- set_linesize
+    if coalesce(p_size,cn_default_linesize) < cn_minimum_linesize
+    then
+      ero_utl.rae ('Minimum linesize is '||to_char(cn_minimum_linesize)||
+                   ' so at least one character will fitt within the borders'
+                  );
+    end if;
+    v_linesize := coalesce(p_size,cn_default_linesize);
+  end set_linesize;
+
+
+  procedure to_file
+  (p_file  in  utl_file.file_type
+  )
+  is
+  begin   -- to_file
+    v_to_file     := utl_file.is_open (p_file);
+
+    if not v_to_file
+    then
+      ero_utl.rae ('File for output has not been opened!');
+    end if;
+
+    v_outputfile  := p_file;
+  end to_file;
+
+
+  procedure to_screen
+  is
+  begin   -- to_screen
+    v_to_file     := false;
+  end to_screen;
+
+
+  function  borderline
+  return varchar2
+  is
+  begin   -- borderline
+    return (ero_utl.repeat(v_borderchar,v_linesize));
+  end borderline;   -- function
+
+
+  procedure borderline
+  is
+  begin   -- borderline
+    output (borderline);
+  end borderline;  -- procedure
+
+
+  function  fill
+  (p_line         in  varchar2
+  ,p_indentation  in  integer    default 0
+  )
+  return varchar2
+  is
+    v_string           ero_types.st_maxchar;
+    v_line             ero_types.st_maxchar;
+    v_line2output      ero_types.st_maxchar;
+
+  begin   -- fill
+    v_string := coalesce(p_line,' ');
+
+    while v_string is not null
+    loop
+      ero_pl.wrap_text
+            (p_text       => v_string                           -- in out
+            ,p_line       => v_line                             --    out
+            ,p_linelength => internal_linesize                  -- in
+            ,p_lineprefix => ero_utl.repeat(' ',p_indentation)  -- in
+            );
+
+      add_border (v_line);
+      v_line2output  := v_line2output||ero_const.cn_eol||v_line;
+    end loop;
+
+    return (v_line2output);
+  end fill;  -- function
+
+
+  procedure fill
+  (p_line         in  varchar2
+  ,p_indentation  in  integer    default 0
+  )
+  is
+    v_string           ero_types.st_maxchar;
+    v_line             ero_types.st_maxchar;
+
+  begin   -- fill
+    v_string := coalesce(p_line,' ');
+
+    while v_string is not null
+    loop
+      ero_pl.wrap_text
+            (p_text       => v_string                           -- in out
+            ,p_line       => v_line                             --    out
+            ,p_linelength => internal_linesize                  -- in
+            ,p_lineprefix => ero_utl.repeat(' ',p_indentation)  -- in
+            );
+
+      add_border (v_line);
+      output (v_line);
+    end loop;
+
+  end fill;  -- procedure
+
+
+  function  get_border
+  return varchar2
+  is
+  begin   -- get_border
+    return (v_borderchar);
+  end get_border;
+
+
+  function  get_linesize
+  return integer
+  is
+  begin   -- get_linesize
+    return (v_linesize);
+  end get_linesize;
+
+
+  function  output_to_file
+  return boolean
+  is
+  begin   -- output_to_file
+    return (v_to_file);
+  end output_to_file;
+
+end ero_fill;
+/
+sho err

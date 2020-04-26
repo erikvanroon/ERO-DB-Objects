@@ -1,0 +1,103 @@
+create or replace package ero_ranges
+authid definer
+is
+  
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_ranges
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : range calculations
+  -- *********************************************************************************
+
+  cn_package_name       constant  ero_types.st_identifier  := $$plsql_unit;
+  
+
+  -- Procedure returns the upper- and lower boundaries of a range in which a specified value belongs, given
+  -- the specified rangesize
+  -- The optional offset determines the startpoint of the ranges. By default this is 1, however, every integer
+  -- can be used for this.
+  -- Examples:
+  -- - input  : value = 12  size = 10
+  --   output : then lower boudary = 11 and upper boundary = 20
+  -- - input  : value = 12  size = 10  offset = 0
+  --   output : then lower boudary = 10 and upper boundary = 19
+  -- - input  : value = 5   size = 10  offset = 8
+  --   output : then lower boudary = -2 and upper boundary = 7
+  procedure get_range
+  (p_value           in      integer
+  ,p_rangesize       in      integer
+  ,p_lower_boundary     out  integer
+  ,p_upper_boundary     out  integer
+  ,p_offset          in      integer  default 1
+  );
+
+
+  -- Function range_string has the same functionality as get_range, except the result is returned as a string
+  -- with the lower and upper boudaries of the range separated by ' <=> '.
+  -- Optionaly a pad-length can be specified. If a pad-length is specified that is larger than the length of 
+  -- the individual numbers, the individual numbers will be left-padded with spaces to the specified length.
+  -- This makes aligning the output of multiple calls to this function easier.
+  -- The optional offset determines the startpoint of the ranges. By default this is 1, however, every integer
+  -- can be used for this.
+  -- Examples:
+  -- - input  : value = 5678  size = 1000
+  --   output : '5001 <=> 6000'
+  -- - input  : value = 5678  size = 1000  padsize = 8
+  --   output : '    5001 <=>     6000'
+  -- - input  : value = 5678  size = 1000  padsize = 8  offset = 0
+  --   output : '5000 <=> 5999'
+  function range_string
+  (p_value         in  integer
+  ,p_rangesize     in  integer
+  ,p_pad_size      in  integer  default null
+  ,p_offset        in  integer  default 1
+  )
+  return varchar2;
+
+
+  -- Function returns the lower boundary of the range in which a specified value belongs, given
+  -- the specified rangesize
+  -- The optional offset determines the startpoint of the ranges. By default this is 1, however, every integer
+  -- can be used for this.
+  -- Examples:
+  -- - input  : value = 4567  size = 1000
+  --   output : 4001
+  -- - input  : value = 4567  size = 1000  offset = 0
+  --   output : 4000
+  function range_from
+  (p_value         in  integer
+  ,p_rangesize     in  integer
+  ,p_offset        in  integer  default 1
+  )
+  return integer;
+
+
+  -- Function returns the upper boundary of the range in which a specified value belongs, given
+  -- the specified rangesize
+  -- The optional offset determines the startpoint of the ranges. By default this is 1, however, every integer
+  -- can be used for this.
+  -- Examples:
+  -- - input  : value = 4567  size = 1000
+  --   output : 5000
+  -- - input  : value = 4567  size = 1000  offset = 0
+  --   output : 4999
+  function range_to
+  (p_value         in  integer
+  ,p_rangesize     in  integer
+  ,p_offset        in  integer  default 1
+  )
+  return integer;
+
+end ero_ranges;
+/
+sho err

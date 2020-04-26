@@ -1,0 +1,117 @@
+prompt ===> ero_stopwatch
+create or replace package ero_stopwatch
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_stopwatch
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : StopWatch functionality
+  -- *********************************************************************************
+
+  cn_package_name     constant   ero_types.st_identifier          := $$plsql_unit;
+  
+  -- Subtype for description of named stapwatchmoments
+  subtype sw_description is ero_types.st_shortstring;
+
+
+  cn_default_descr_prefix constant ero_types.st_shortstring := 'TIME_';
+
+
+  -- Record for collection
+  type rt_sw is record (description        sw_description
+                       ,moment             date
+                       ,sec_since_start    number
+                       ,sec_since_prev     number
+                       );
+
+
+  -- collection for stopwatchmoments (start- and laptimes)
+  type at_sw is table of rt_sw index by pls_integer;
+  a_sw    at_sw;
+
+
+  -- Procedure deletes all start- and laptimes that are collected so far.
+  -- Gets called by procedure startup, but can be called from outside this packae too if needed
+  procedure clear;
+
+
+  -- Procedure initialises the start- and laptimes collection and stores the starttime in there
+  -- Description is optional. If no description is supplied it is set to the value of 
+  -- constant cn_default_descr_prefix, followed by '1'
+  procedure startup
+  (p_description   in  sw_description  default cn_default_descr_prefix||'1'
+  );
+
+
+  -- Procedure stores a laptime.
+  procedure lap
+  (p_description   in  sw_description  default null
+  );
+
+
+  -- Functie returns the collection of type at_sw with all stored start- and laptimes
+  function all_data
+  return at_sw
+  ;
+
+
+  -- time_passed is overloaded as 2 functions and 2 procedures.
+  -- The functions return a string with the time passes in days (if >= 24 hours), hours,
+  -- minutes and seconds.
+  -- The procedures put that same string on screen, using dbms_output
+  -- Both the function- and the procedure-form exist with 2 different paramaterlists:
+  --   - p_start and p_stop as integers
+  --   - p_start and p_stop as varchar's
+  -- VARCHAR2-Version
+  --   Using the VARCHAR version, the names of the start- and laptimes should be used.
+  --   If your code defined start- and laptimes by name, then those times can be referenced by these names 
+  --   using this version . If your code defined start- and laptimes without names the times can be referenced 
+  --   by the default names that were assigned to them: the value of cn_default_descr_prefix, followed by the 
+  --   sequence number of the start- or laptime. However, in this case it is probably easier to use the integer version.
+  --   Parameter p_start is mandatory in this version. If p_stop is omitted it is considered to be NOW, so not
+  --   a defined measuring moment but just SYSDATE.  
+  -- PLS_INTEGER-Version
+  --   Using this version, the sequence numbers of the start- and laptimes should be used.
+  --   The sequence numbers are simply the sequence in which the startup and lap procedures have been called.
+  --   Both p_start and p_stop are optional.
+  --   If p_start is omitted it is considered to be the first measured time (start) that is defined
+  --   If p_stop is omitted it is considered to be NOW, so not a defined measuring moment but just SYSDATE.
+  function time_passed
+  (p_start    in   pls_integer   default null
+  ,p_stop     in   pls_integer   default null
+  )
+  return varchar2
+  ;
+
+  function time_passed
+  (p_start   in   varchar2
+  ,p_stop    in   varchar2  default null
+  )
+  return varchar2
+  ;
+
+  procedure time_passed
+  (p_start    in   pls_integer   default null
+  ,p_stop     in   pls_integer   default null
+  );
+
+  procedure time_passed
+  (p_start   in   varchar2
+  ,p_stop    in   varchar2  default null
+  );
+
+end ero_stopwatch;
+/
+sho err

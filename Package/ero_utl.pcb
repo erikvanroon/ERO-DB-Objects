@@ -1,0 +1,1209 @@
+prompt ===> ero_utl
+create or replace package body ero_utl
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_utl
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Miscellaneous utilities
+  -- *********************************************************************************
+
+
+  procedure rae
+  (p_msg   in  varchar2
+  ,p_code  in  integer   default -20000
+  )
+  is
+  begin   -- rae
+    raise_application_error (p_code
+                            ,p_msg
+                            );
+  end rae;
+
+
+  -- return the string enclosed by quotes and with quotes that are part of the strings data escaped (each individual quote replaced by 2 single quotes)
+  function quoted
+  (p_string_to_be_quoted  in  ero_types.st_maxchar
+  )
+  return ero_types.st_maxchar
+  is
+    v_result   ero_types.st_maxchar;
+  begin  -- quoted
+    v_result := ero_const.cn_quote               ||
+                replace(p_string_to_be_quoted
+                       ,ero_const.cn_quote
+                       ,ero_const.cn_quote||ero_const.cn_quote
+                       )                         ||
+                ero_const.cn_quote;
+
+    return (v_result);
+  end quoted;
+
+
+  procedure check_numeric_varchar
+  (p_string  in  varchar2
+  ,p_proc    in  varchar2
+  )
+  is
+  begin   -- check_numeric_varchar
+    if not is_number (coalesce(p_string,'0'))
+    then
+      rae (p_msg   => 'Error while executing procedure '||p_proc||' in '||
+                      cn_package_name||': non-numeric value ('||p_string||')'
+          ,p_code  => -20801
+          );
+    end if;
+  end check_numeric_varchar;
+
+
+  procedure distribution
+  (p_table               in            varchar2
+  ,p_key_colomn          in            varchar2
+  ,p_key_datatype        in            varchar2           default ero_const.cn_datatype_num
+  ,p_process_count       in            integer
+  ,p_min_rec_count       in            integer            default null
+  ,p_where_clause        in            varchar2           default null
+  ,p_distribution_num    in out nocopy nt_ero_distribution_num
+  ,p_distribution_chr    in out nocopy nt_ero_distribution_chr
+  ,p_distribution_dat    in out nocopy nt_ero_distribution_dat
+  )
+  is
+    cn_min_proc_count   constant integer                  := 1;
+    cn_where_identifier constant varchar2(10)             := 'where';
+
+    type at_dst_process_nr  is table of integer               index by pls_integer;
+    type at_dst_key_start_n is table of number                index by pls_integer;
+    type at_dst_key_end_n   is table of number                index by pls_integer;
+    type at_dst_key_start_c is table of ero_types.st_maxchar  index by pls_integer;
+    type at_dst_key_end_c   is table of ero_types.st_maxchar  index by pls_integer;
+    type at_dst_key_start_d is table of date                  index by pls_integer;
+    type at_dst_key_end_d   is table of date                  index by pls_integer;
+    type at_dst_count       is table of integer               index by pls_integer;
+    a_dst_process_nr  at_dst_process_nr  ;
+    a_dst_key_start_n at_dst_key_start_n ;
+    a_dst_key_end_n   at_dst_key_end_n   ;
+    a_dst_key_start_c at_dst_key_start_c ;
+    a_dst_key_end_c   at_dst_key_end_c   ;
+    a_dst_key_start_d at_dst_key_start_d ;
+    a_dst_key_end_d   at_dst_key_end_d   ;
+    a_dst_count       at_dst_count       ;
+
+    r_num  ot_ero_distribution_num;
+    r_chr  ot_ero_distribution_chr;
+    r_dat  ot_ero_distribution_dat;
+
+    v_query_valid       boolean                ;
+    v_where             ero_types.st_maxchar   ;
+    v_message           ero_types.st_maxchar   ;
+    v_cnt_query         ero_types.st_maxchar   ;
+    v_dst_query         ero_types.st_maxchar   ;
+    v_datatype          ero_types.st_identifier;
+    v_process_count     integer                ;
+    v_rec_count         integer                ;
+
+  begin   -- distribution
+    v_where := case coalesce(lower(substr(replace(replace(p_where_clause
+                                                         ,' '
+                                                         )
+                                                 ,'('
+                                                 )
+                                         ,1
+                                         ,length (cn_where_identifier)
+                                         )
+                                  )
+                            ,ero_const.cn_nullstring
+                            )
+                 when ero_const.cn_nullstring  then null
+                 when cn_where_identifier      then p_where_clause
+                 else                               cn_where_identifier||' '||p_where_clause
+               end;
+
+    if p_table is null
+    then
+      rae ('No table specified');
+    elsif p_key_colomn is null
+    then
+      rae ('No column(s) specified');
+    elsif p_process_count < cn_min_proc_count
+    then
+      rae ('The number of processes should be at least '||to_char(cn_min_proc_count));
+    elsif coalesce(p_min_rec_count,1) <= 0
+    then
+      rae ('The minimum number of records per process may not be less than 1');
+    end if;
+
+    v_datatype := case upper(p_key_datatype)
+                    when ero_const.cn_datatype_n          then ero_const.cn_datatype_n
+                    when ero_const.cn_datatype_num        then ero_const.cn_datatype_n
+                    when ero_const.cn_datatype_number     then ero_const.cn_datatype_n
+                    when ero_const.cn_datatype_c          then ero_const.cn_datatype_c
+                    when ero_const.cn_datatype_chr        then ero_const.cn_datatype_c
+                    when ero_const.cn_datatype_char       then ero_const.cn_datatype_c
+                    when ero_const.cn_datatype_character  then ero_const.cn_datatype_c
+                    when ero_const.cn_datatype_varchar2   then ero_const.cn_datatype_c
+                    when ero_const.cn_datatype_d          then ero_const.cn_datatype_d
+                    when ero_const.cn_datatype_dat        then ero_const.cn_datatype_d
+                    when ero_const.cn_datatype_date       then ero_const.cn_datatype_d
+                    else                             null
+                  end;
+    if v_datatype is null
+    then
+      rae ('Invalid datatype ('||upper(p_key_datatype)||') in call to distribution');
+    end if;
+
+    -- check syntactical validity of parameters
+    chk_query_validity (p_query   => 'select '||p_key_colomn||ero_const.cn_eol||
+                                     'from   '||p_table     ||ero_const.cn_eol||
+                                     v_where                                   -- in
+                       ,p_valid   => v_query_valid                             --    out
+                       ,p_message => v_message                                 --    out
+                       );
+
+    if not v_query_valid
+    then
+      rae ('Error caused by supplied parameters: '||ero_const.cn_eol||v_message);
+    end if;
+
+    if p_min_rec_count is null
+    then
+      v_process_count := p_process_count;
+    else
+      -- determine number of records
+      v_cnt_query := 'select count(*)'     ||ero_const.cn_eol||
+                     'from   '||p_table    ||ero_const.cn_eol||
+                     '        '||v_where
+                     ;
+      -- Just to be sure, check syntactical validity of the count-query
+      ero_utl.chk_query_validity
+                         (p_query   => v_cnt_query         -- in
+                         ,p_valid   => v_query_valid       --    out
+                         ,p_message => v_message           --    out
+                         );
+      if not v_query_valid
+      then
+        rae ('Internal error while constructing query for recordcount: '||ero_const.cn_eol||v_message);
+      end if;
+
+      execute immediate v_cnt_query
+      into v_rec_count;
+
+      if v_rec_count/p_min_rec_count >= p_process_count
+      then
+        v_process_count := p_process_count;
+      else
+        v_process_count := greatest (cn_min_proc_count   -- minimum number of processes
+                                    ,floor (v_rec_count/p_min_rec_count)
+                                    );
+      end if;
+    end if;
+
+    -- Construct distribution-query
+    v_dst_query := 'select process_nr       process_nr'                            ||ero_const.cn_eol||
+                   ',      min(key_kolom)   key_start'                             ||ero_const.cn_eol||
+                   ',      max(key_kolom)   key_end'                               ||ero_const.cn_eol||
+                   ',      count(*)         rec_count'                             ||ero_const.cn_eol||
+                   'from   (select '||p_key_colomn||'   key_kolom'                 ||ero_const.cn_eol||
+                   '        ,      ntile ('||to_char(v_process_count)||')'         ||ero_const.cn_eol||
+                   '                over (order by '||p_key_colomn||')  process_nr'||ero_const.cn_eol||
+                   '        from   '||p_table                                      ||ero_const.cn_eol||
+                   '        '||v_where                                             ||ero_const.cn_eol||
+                   '       )'                                                      ||ero_const.cn_eol||
+                   'group by process_nr'
+                   ;
+
+    -- Just to be sure, check syntactical validity of the distribution-query
+    chk_query_validity (p_query   => v_dst_query    -- in
+                       ,p_valid   => v_query_valid  --    out
+                       ,p_message => v_message      --    out
+                       );
+
+    if not v_query_valid
+    then
+      rae ('Internal error while constructing query for distribution: '||ero_const.cn_eol||v_message);
+    end if;
+
+    case v_datatype
+      when ero_const.cn_datatype_n      then execute immediate v_dst_query
+                                             bulk collect
+                                             into a_dst_process_nr
+                                             ,    a_dst_key_start_n
+                                             ,    a_dst_key_end_n
+                                             ,    a_dst_count
+                                             ;
+      when ero_const.cn_datatype_c      then execute immediate v_dst_query
+                                             bulk collect
+                                             into a_dst_process_nr
+                                             ,    a_dst_key_start_c
+                                             ,    a_dst_key_end_c
+                                             ,    a_dst_count
+                                             ;
+      when ero_const.cn_datatype_d      then execute immediate v_dst_query
+                                             bulk collect
+                                             into a_dst_process_nr
+                                             ,    a_dst_key_start_d
+                                             ,    a_dst_key_end_d
+                                             ,    a_dst_count
+                                             ;
+      else                                   rae ('Invalid datatype ('||upper(p_key_datatype)||') in call to distribution');
+    end case;
+
+    if a_dst_process_nr.count > 0
+    then
+      for i_dst in a_dst_process_nr.first .. a_dst_process_nr.last
+      loop
+        case v_datatype
+          when ero_const.cn_datatype_n      then   r_num  := ot_ero_distribution_num (a_dst_process_nr  (i_dst)
+                                                                                     ,a_dst_key_start_n (i_dst)
+                                                                                     ,a_dst_key_end_n   (i_dst)
+                                                                                     ,a_dst_count       (i_dst)
+                                                                                     );
+                                                   p_distribution_num.extend;
+                                                   p_distribution_num(p_distribution_num.last) := r_num;
+          when ero_const.cn_datatype_c      then   r_chr  := ot_ero_distribution_chr (a_dst_process_nr  (i_dst)
+                                                                                     ,a_dst_key_start_c (i_dst)
+                                                                                     ,a_dst_key_end_c   (i_dst)
+                                                                                     ,a_dst_count       (i_dst)
+                                                                                     );
+                                                   p_distribution_chr.extend;
+                                                   p_distribution_chr(p_distribution_chr.last) := r_chr;
+          when ero_const.cn_datatype_d      then   r_dat  := ot_ero_distribution_dat (a_dst_process_nr  (i_dst)
+                                                                                     ,a_dst_key_start_d (i_dst)
+                                                                                     ,a_dst_key_end_d   (i_dst)
+                                                                                     ,a_dst_count       (i_dst)
+                                                                                     );
+                                                   p_distribution_dat.extend;
+                                                   p_distribution_dat(p_distribution_dat.last) := r_dat;
+          else rae ('Invalid datatype ('||upper(p_key_datatype)||') in call to distribution');
+        end case;
+      end loop;
+    end if;
+
+  end distribution;
+
+
+  function num2dut
+  (p_number  in  number
+  ,p_format  in  varchar2  default null
+  ,p_maxdec  in  integer   default 10
+  )
+  return varchar2
+  is
+    v_left     integer;
+    v_right    integer;
+    v_decm     number;
+    v_format   varchar2(32000);
+    v_result   varchar2(32000);
+
+
+    procedure format_add
+    (p_teken  in  varchar2
+    )
+    is
+    begin   -- format_add
+      v_format := v_format || p_teken;
+    end format_add;
+
+  begin   -- num2dut
+    if p_number is null
+    then
+      v_result := null;
+    else
+      if p_format is null
+      then
+        format_add ('fm');
+
+        v_left := length(to_char(trunc(p_number)));
+        for i in reverse 1 .. v_left
+        loop
+          if  i not in (1,v_left)
+          and mod(i,3) = 0
+          then
+            format_add ('g');
+          end if;
+
+          if i = 1
+          then
+            format_add ('0');
+          else
+            format_add ('9');
+          end if;
+        end loop;
+
+        v_decm := ero_utl.decm(p_number);
+
+        if v_decm    <> 0
+        and p_maxdec  > 0
+        then
+          format_add ('d');
+
+          v_right := least(length(to_char(v_decm)) - 1
+                          ,p_maxdec
+                          );
+
+          format_add ('0'||ero_utl.repeat('9',v_right-1));
+
+        end if;
+      else
+        format_add (p_format);
+      end if;
+      v_result := to_char(p_number
+                         ,v_format
+                         ,'nls_numeric_characters = '||ero_const.cn_quote||',.'||ero_const.cn_quote
+                         );
+    end if;
+
+    return (v_result);
+  end num2dut;
+
+
+  function swap_separators
+  (p_number  in  varchar2
+  )
+  return varchar2
+  is
+  begin   -- swap_separators
+    return (translate(translate(translate (p_number
+                                          ,ero_const.cn_dot    -- eerst punten
+                                          ,ero_const.cn_tilde  -- naar tildes
+                                          )                    
+                               ,ero_const.cn_comma             -- dan komma's
+                               ,ero_const.cn_dot               -- naar punten
+                               )                               
+                     ,ero_const.cn_tilde                       -- dan tildes
+                     ,ero_const.cn_comma                       -- naar komma's
+                     )
+           );
+  end swap_separators;
+
+
+  function is_number
+  (p_varchar  in  varchar2
+  )
+  return boolean
+  is
+    v_dummy  number;
+  begin   -- is_number
+    v_dummy  := to_number(p_varchar);
+    return ( true );
+  exception
+    when invalid_number
+    or   value_error
+    then
+      return ( false );
+    when others
+    then
+      rae (p_msg   => 'Error in call to function is_number in package '||cn_package_name||': '||SQLERRM
+          ,p_code  => -20802
+          );
+  end is_number;
+
+
+  procedure inc
+  (p_num2inc  in out  number
+  ,p_amount   in      number     default 1
+  )
+  is
+  begin   -- inc
+    p_num2inc := p_num2inc + p_amount;
+  end inc;
+
+
+  procedure inc
+  (p_dat2inc  in out  date
+  ,p_amount   in      number     default 1
+  )
+  is
+  begin   -- inc
+    p_dat2inc := p_dat2inc + p_amount;
+  end inc;
+
+
+  procedure inc
+  (p_chr2inc  in out  varchar2
+  ,p_amount   in      number     default 1
+  )
+  is
+  begin   -- inc
+    check_numeric_varchar (p_chr2inc,'inc');
+    p_chr2inc := to_char(to_number(p_chr2inc) + p_amount
+                        );
+  end inc;
+
+
+  procedure dec
+  (p_num2dec  in out  number
+  ,p_amount   in      number default 1
+  )
+  is
+  begin   -- dec
+    p_num2dec := p_num2dec - p_amount;
+  end dec;
+
+
+  procedure dec
+  (p_dat2dec  in out  date
+  ,p_amount   in      number default 1
+  )
+  is
+  begin   -- dec
+    p_dat2dec := p_dat2dec - p_amount;
+  end dec;
+
+
+  procedure dec
+  (p_chr2dec  in out  varchar2
+  ,p_amount   in      number default 1
+  )
+  is
+  begin   -- dec
+    check_numeric_varchar (p_chr2dec,'dec');
+    p_chr2dec := to_char(to_number(p_chr2dec) - p_amount
+                                  );
+  end dec;
+
+
+  function div
+  (p_numerator    in  number
+  ,p_denominator  in  number
+  )
+  return number
+  is
+  begin   -- div
+    return (trunc(p_numerator/p_denominator));
+  end div;
+
+
+  function decm
+  (p_number  in  number
+  )
+  return number
+  is
+  begin   -- decm
+    return (p_number - trunc(p_number));
+  end decm;
+
+
+  function center
+  (p_string  in  varchar2
+  ,p_width   in  number
+  ,p_char    in  varchar2   default ' '
+  )
+  return varchar2
+  is
+    v_left   number;
+    v_char   varchar2(1)  := coalesce(p_char,' ');
+  begin   -- center
+    if coalesce(p_width,0) <= 0
+    then
+      return (p_string);
+    else
+      if p_width < length(coalesce(p_string,v_char))
+      then
+        v_left := div(length(coalesce(p_string,v_char)) - p_width
+                     ,2
+                     ) + 1;
+        return (substr(coalesce(p_string,v_char)
+                      ,v_left
+                      ,p_width
+                      )
+               );
+      else
+        v_left := div(p_width - length(coalesce(p_string,v_char))
+                     ,2
+                     );
+        return (rpad(lpad(coalesce(p_string,v_char)
+                         ,v_left + length(coalesce(p_string,v_char))
+                         ,v_char
+                         )
+                    ,p_width
+                    ,v_char
+                    )
+               );
+      end if;
+    end if;
+  end center;
+
+
+  function levelindent
+  (p_value     in  varchar2
+  ,p_level     in  number
+  )
+  return varchar2
+  is
+  begin   -- levelindent
+    return (repeat (p_char   => ' '
+                   ,p_length => 2 * (p_level-1)
+                   )
+            ||p_value
+           );
+  end levelindent;
+
+
+  function repeat
+  (p_char    in   varchar2
+  ,p_length  in   integer
+  )
+  return varchar2
+  is
+    v_lengte integer;
+  begin   -- repeat
+    v_lengte := greatest(coalesce(p_length,0)     -- if input is null then return null
+                        ,0                        -- is input < 0 then return null
+                        );
+
+    return (rpad(p_char,v_lengte,p_char));
+  end repeat;
+
+
+  function substr_until_char
+  (p_string     in  varchar2
+  ,p_char       in  varchar2
+  ,p_seq        in  integer  default 1
+  ,p_including  in  boolean  default false
+  )
+  return varchar2
+  is
+    v_seq         integer  := coalesce(p_seq,0);
+    v_including   boolean  := coalesce(p_including,false);
+    v_result      varchar2(32767);
+    v_chr_pos     integer;
+  begin   -- substr_until_char
+    if p_string is null
+    or p_char   is null
+    then
+      v_result := null;
+    else
+      if v_seq = 0
+      then
+        v_seq := 1;
+      end if;
+
+      v_chr_pos := instr(p_string,p_char,sign(v_seq),abs(v_seq));
+      if v_chr_pos = 0
+      or (v_chr_pos = 1
+          and
+          not v_including
+         )
+      then
+        v_result := null;
+      else
+        v_chr_pos := v_chr_pos - 1;
+        if v_including
+        then
+          v_chr_pos := v_chr_pos + length(p_char);
+        end if;
+        v_result := substr(p_string,1,v_chr_pos);
+      end if;
+    end if;
+    return (v_result);
+  end substr_until_char;
+
+
+  function substr_from_char
+  (p_string     in  varchar2
+  ,p_char       in  varchar2
+  ,p_seq        in  integer  default 1
+  ,p_including  in  boolean  default false
+  )
+  return varchar2
+  is
+    v_seq         integer  := coalesce(p_seq,0);
+    v_including   boolean  := coalesce(p_including,false);
+    v_result      varchar2(32767);
+    v_chr_pos     integer;
+  begin   -- substr_from_char
+    if p_string is null
+    or p_char   is null
+    then
+      v_result := null;
+    else
+      if v_seq = 0
+      then
+        v_seq := 1;
+      end if;
+
+      v_chr_pos := instr(p_string,p_char,sign(v_seq),abs(v_seq));
+      if v_chr_pos = 0
+      or (v_chr_pos = (length(p_string) - (length(p_char)-1))
+          and
+          not v_including
+         )
+      then
+        v_result := null;
+      else
+        if not v_including
+        then
+          v_chr_pos := v_chr_pos + length(p_char);
+        end if;
+        v_result := substr(p_string,v_chr_pos);
+      end if;
+    end if;
+    return (v_result);
+  end substr_from_char;
+
+
+  procedure chk_query_validity
+  (p_query    in      varchar2
+  ,p_valid       out  boolean
+  ,p_message     out  varchar2
+  )
+  is
+    cn_success_msg  constant   varchar2(100) := 'Query is valid';
+
+    v_stmnt   ero_types.st_maxchar;
+  begin   -- chk_query_validity
+    -- a missing query is not a valid query
+    if p_query is null
+    then
+      rae ('No query specified'
+          ,-20803
+          );
+    end if;
+
+    -- Include the supplied query as a cursor in a dynamic anonimous block.
+    -- The block itself doesn't execute any code. When the block is executed with execute immediate
+    -- it will be compiled, but nothing else happens.
+    -- If the query contains syntatical errors execution will raise an exception.
+    v_stmnt := 'declare'         ||ero_const.cn_eol||
+               '  cursor c_test' ||ero_const.cn_eol||
+               '  is'            ||ero_const.cn_eol||
+                 p_query||';'    ||ero_const.cn_eol||
+               'begin'           ||ero_const.cn_eol||
+               '  null;'         ||ero_const.cn_eol||
+               'end;'
+               ;
+    execute immediate (v_stmnt);
+
+    -- If this point is reached execution was successful, hence the query is syntactically correct
+    p_valid   := true;
+    p_message := cn_success_msg;
+  exception
+    when others
+    then
+      p_valid   := false;
+      p_message := sqlerrm;
+  end chk_query_validity;
+
+
+  function pending_transaction
+  return boolean
+  is
+  begin   -- pending_transaction
+    return (dbms_transaction.step_id is not null);
+  end pending_transaction;
+
+
+  function list_as_array
+  (p_delimited_list     in  clob
+  ,p_delimiter          in  varchar2   default  ero_const.cn_semicolon
+  )
+  return nt_ero_maxchar
+  is
+    v_list            clob;
+    v_delimiter       ero_types.st_singlechar;
+    v_pos_delimiter   integer;
+    n_result          nt_ero_maxchar      := nt_ero_maxchar();
+  begin   -- list_as_array
+    v_delimiter  := coalesce(p_delimiter,ero_const.cn_semicolon);   -- In case parameter was explicitly set to null
+    v_list       := p_delimited_list;
+    while v_list is not null
+    loop
+      n_result.extend;
+      v_pos_delimiter := instr (v_list
+                               ,v_delimiter
+                               ,1
+                               ,1
+                               );
+
+      n_result(n_result.last) := case v_pos_delimiter
+                                   when 0 then v_list
+                                   else        substr(v_list
+                                                     ,1
+                                                     ,v_pos_delimiter - 1
+                                                     )
+                                 end;
+      v_list                  := case v_pos_delimiter
+                                   when 0 then null
+                                   else        substr(v_list
+                                                     ,v_pos_delimiter + 1
+                                                     )
+                                 end;
+    end loop;
+    return (n_result);
+  end list_as_array;
+
+
+  function distribution_num
+  (p_table            in  varchar2
+  ,p_key_colomn       in  varchar2
+  ,p_process_count    in  integer
+  ,p_min_rec_count    in  integer    default null
+  ,p_where_clause     in  varchar2   default null
+  )
+  return nt_ero_distribution_num
+  is
+    n_num    nt_ero_distribution_num  := nt_ero_distribution_num();
+    n_chr    nt_ero_distribution_chr  := nt_ero_distribution_chr();
+    n_dat    nt_ero_distribution_dat  := nt_ero_distribution_dat();
+  begin   -- distribution_num
+    distribution (p_table               => p_table                  -- in
+                 ,p_key_colomn          => p_key_colomn             -- in
+                 ,p_key_datatype        => ero_const.cn_datatype_n  -- in           
+                 ,p_process_count       => p_process_count          -- in
+                 ,p_min_rec_count       => p_min_rec_count          -- in
+                 ,p_where_clause        => p_where_clause           -- in
+                 ,p_distribution_num    => n_num                    -- in out nocopy
+                 ,p_distribution_chr    => n_chr                    -- in out nocopy
+                 ,p_distribution_dat    => n_dat                    -- in out nocopy
+                 );
+
+    return (n_num);
+  end distribution_num;
+
+
+  function distribution_chr
+  (p_table            in  varchar2
+  ,p_key_colomn       in  varchar2
+  ,p_process_count    in  integer
+  ,p_min_rec_count    in  integer    default null
+  ,p_where_clause     in  varchar2   default null
+  )
+  return nt_ero_distribution_chr
+  is
+    n_num    nt_ero_distribution_num  := nt_ero_distribution_num();
+    n_chr    nt_ero_distribution_chr  := nt_ero_distribution_chr();
+    n_dat    nt_ero_distribution_dat  := nt_ero_distribution_dat();
+  begin   -- distribution_chr
+    distribution (p_table               => p_table                  -- in
+                 ,p_key_colomn          => p_key_colomn             -- in
+                 ,p_key_datatype        => ero_const.cn_datatype_c  -- in           
+                 ,p_process_count       => p_process_count          -- in
+                 ,p_min_rec_count       => p_min_rec_count          -- in
+                 ,p_where_clause        => p_where_clause           -- in
+                 ,p_distribution_num    => n_num                    -- in out nocopy
+                 ,p_distribution_chr    => n_chr                    -- in out nocopy
+                 ,p_distribution_dat    => n_dat                    -- in out nocopy
+                 );
+
+    return (n_chr);
+  end distribution_chr;
+
+
+  function distribution_dat
+  (p_table            in  varchar2
+  ,p_key_colomn       in  varchar2
+  ,p_process_count    in  integer
+  ,p_min_rec_count    in  integer    default null
+  ,p_where_clause     in  varchar2   default null
+  )
+  return nt_ero_distribution_dat
+  is
+    n_num    nt_ero_distribution_num  := nt_ero_distribution_num();
+    n_chr    nt_ero_distribution_chr  := nt_ero_distribution_chr();
+    n_dat    nt_ero_distribution_dat  := nt_ero_distribution_dat();
+  begin   -- distribution_dat
+    distribution (p_table               => p_table                  -- in
+                 ,p_key_colomn          => p_key_colomn             -- in
+                 ,p_key_datatype        => ero_const.cn_datatype_d  -- in           
+                 ,p_process_count       => p_process_count          -- in
+                 ,p_min_rec_count       => p_min_rec_count          -- in
+                 ,p_where_clause        => p_where_clause           -- in
+                 ,p_distribution_num    => n_num                    -- in out nocopy
+                 ,p_distribution_chr    => n_chr                    -- in out nocopy
+                 ,p_distribution_dat    => n_dat                    -- in out nocopy
+                 );
+
+    return (n_dat);
+  end distribution_dat;
+
+
+  procedure move_column
+  (p_table_name     in  all_tab_columns.table_name%type
+  ,p_column_name    in  all_tab_columns.column_name%type
+  ,p_new_position   in  all_tab_columns.column_id%type
+  )
+  is
+    cn_id_fmt  constant    ero_types.st_maxchar   := 'fm999999999';
+
+    cursor c_col (cp_table_name     all_tab_cols.table_name%type
+                 ,cp_column_name    all_tab_cols.column_name%type
+                 ,cp_new_position   all_tab_columns.column_id%type
+                 )
+    is
+    select case
+             -- Invisible columns remain invisible
+             when col.column_id    is null
+             then null
+             -- The specified column moves to the new position
+             when col.column_id     = col.old_position
+             then cp_new_position
+             -- If the specified column moves 'down' the list of columns
+             -- all columns between old and new position must be moved 1 place 'up' in the columnlist
+             when col.old_position <  cp_new_position
+              and col.column_id    >  col.old_position
+              and col.column_id    <= cp_new_position
+             then col.column_id - 1
+             -- If the specified column moves 'up' the list of columns
+             -- all columns between old and new position must be moved 1 place 'down' in the columnlist
+             when col.old_position >  cp_new_position
+              and col.column_id    <  col.old_position
+              and col.column_id    >= cp_new_position
+             then col.column_id + 1
+             -- In all other cases no changes to the columnposition are needed
+             else col.column_id
+           end                    new_col_position
+    ,      col.column_id
+    ,      col.column_name
+    ,      col.hidden_column
+    ,      col.max_len_column_id
+    ,      col.max_len_column_name
+    ,      col.max_len_hidden_column
+    ,      col.old_position
+    from   (select utc.column_id
+            ,      utc.column_name
+            ,      utc.hidden_column
+            ,      coalesce(max(length(to_char(utc.column_id,cn_id_fmt))) over (), 0)  max_len_column_id
+            ,      coalesce(max(length(utc.column_name))                  over (), 0)  max_len_column_name
+            ,      coalesce(max(length(utc.hidden_column))                over (), 0)  max_len_hidden_column
+            ,      max(case utc.column_name
+                         when upper(cp_column_name)
+                         then utc.column_id
+                         else 0
+                       end
+                      )                                                   over ()      old_position
+            from   user_tab_cols    utc
+            where  utc.table_name   = upper(cp_table_name)
+           )     col
+    order by new_col_position nulls last
+    ;
+
+    type at_col   is table of c_col%rowtype  index by pls_integer;
+    a_col     at_col;
+
+
+    procedure get_columns
+    is
+    begin   -- get_columns
+      open c_col (cp_table_name   => p_table_name
+                 ,cp_column_name  => p_column_name
+                 ,cp_new_position => p_new_position
+                 );
+      fetch c_col
+      bulk collect
+      into  a_col;
+      close c_col;
+
+      if a_col.count = 0
+      then
+        rae ('No columns found for table '||p_table_name);
+      end if;
+    end get_columns;
+
+
+    procedure print_result
+    is
+      cn_header_id     constant   ero_types.st_maxchar  := 'ID'         ;
+      cn_header_name   constant   ero_types.st_maxchar  := 'Column Name';
+      cn_header_inv    constant   ero_types.st_maxchar  := 'Invisible?' ;
+      cn_linelength    constant   integer               := 50;
+
+      v_width_id     integer;
+      v_width_name   integer;
+      v_width_inv    integer;
+
+    begin   -- print_result
+      v_width_id   := greatest(length(cn_header_id  ) , a_col(a_col.first).max_len_column_id    );
+      v_width_name := greatest(length(cn_header_name) , a_col(a_col.first).max_len_column_name  );
+      v_width_inv  := greatest(length(cn_header_inv ) , a_col(a_col.first).max_len_hidden_column);
+
+      ero_pl.pl (rpad(ero_const.cn_hash, cn_linelength, ero_const.cn_hash));
+      ero_pl.pl ('Table AFTER Column Reorder');
+      ero_pl.pl (rpad(ero_const.cn_hash, cn_linelength, ero_const.cn_hash));
+      ero_pl.pl;
+
+      ero_pl.pl (rpad(cn_header_id  , v_width_id  , ero_const.cn_space) ||ero_const.cn_space||
+                 rpad(cn_header_name, v_width_name, ero_const.cn_space) ||ero_const.cn_space||
+                 rpad(cn_header_inv , v_width_inv , ero_const.cn_space)
+                );
+      ero_pl.pl (rpad(ero_const.cn_equal, v_width_id  , ero_const.cn_equal) ||ero_const.cn_space||
+                 rpad(ero_const.cn_equal, v_width_name, ero_const.cn_equal) ||ero_const.cn_space||
+                 rpad(ero_const.cn_equal, v_width_inv , ero_const.cn_equal)
+                );
+
+      for i_col in a_col.first .. a_col.last
+      loop
+        ero_pl.pl (lpad(coalesce(to_char(a_col(i_col).column_id,cn_id_fmt),' '), v_width_id  , ero_const.cn_space) ||ero_const.cn_space||
+                   rpad(coalesce(        a_col(i_col).column_name         ,' '), v_width_name, ero_const.cn_space) ||ero_const.cn_space||
+                   rpad(coalesce(        a_col(i_col).hidden_column       ,' '), v_width_inv , ero_const.cn_space)
+                  );
+      end loop;
+      ero_pl.pl (rpad(ero_const.cn_hash, cn_linelength, ero_const.cn_hash));
+      ero_pl.pl;
+    end print_result;
+
+
+    procedure reorder_columns
+    is
+      cn_state_invisible   constant  ero_types.st_maxchar   := 'INVISIBLE';
+      cn_state_visible     constant  ero_types.st_maxchar   := 'VISIBLE';
+
+
+      procedure alter_column
+      (p_column   in  all_tab_columns.column_name%type
+      ,p_state    in  ero_types.st_maxchar
+      )
+      is
+        v_stmnt   ero_types.st_maxchar;
+      begin   -- alter_column
+        v_stmnt := 'alter table '||p_table_name   ||ero_const.cn_eol||
+                   'modify '                      ||ero_const.cn_eol||
+                   '('||p_column||'   '||p_state  ||ero_const.cn_eol||
+                   ')'
+                   ;
+
+        execute immediate v_stmnt;
+      end alter_column;
+
+    begin   -- reorder_columns
+      for i_col in a_col.first .. a_col.last
+      loop
+        if a_col(i_col).hidden_column = 'NO'
+        then
+          alter_column (p_column  => a_col(i_col).column_name
+                       ,p_state   => cn_state_invisible
+                       );
+          alter_column (p_column  => a_col(i_col).column_name
+                       ,p_state   => cn_state_visible
+                       );
+        end if;
+      end loop;
+
+    end reorder_columns;
+
+  begin   -- move_column
+    get_columns;
+
+    reorder_columns;
+
+    print_result;
+
+  end move_column;
+
+
+  procedure mv_capabilities
+  (p_mv_stmnt  in  varchar2
+  )
+  is
+    -- Below cn_print_* constants are used to identify at column level if the data should be displayed
+    cn_print_seq             constant  boolean        := true ;
+    cn_print_mvowner         constant  boolean        := false;
+    cn_print_mvname          constant  boolean        := false;
+    cn_print_capability_name constant  boolean        := true ;
+    cn_print_possible        constant  boolean        := true ;
+    cn_print_related_text    constant  boolean        := true ;
+    cn_print_related_num     constant  boolean        := false;
+    cn_print_msgno           constant  boolean        := false;
+    cn_print_msgtxt          constant  boolean        := true ;
+
+    cn_col_separator         constant  varchar2(100)  := ero_const.cn_space;  -- the character used to separate columnvalues
+    cn_col_underline         constant  varchar2(100)  := ero_const.cn_equal;  -- the character used to underline columnheaders
+    cn_col_filler            constant  varchar2(100)  := ero_const.cn_space;  -- the character used to rpad columnvalues with
+
+    -- Below cn_capability_* constants contain the values returned by explain_mview
+    -- indicating whether or not the mview has they capability
+    cn_capability_ja         constant  varchar2(100)  := 'T';
+    cn_capability_nee        constant  varchar2(100)  := 'F';
+    cn_capability_overig     constant  varchar2(100)  := 'X';
+
+    -- Below cn_hdr_* constants contain the headers of the columns
+    cn_hdr_mvowner           constant  ero_types.st_maxchar     := 'Owner'       ;
+    cn_hdr_mvname            constant  ero_types.st_maxchar     := 'Name'        ;
+    cn_hdr_capability_name   constant  ero_types.st_maxchar     := 'Capability'  ;
+    cn_hdr_possible          constant  ero_types.st_maxchar     := 'Possible'    ;
+    cn_hdr_related_text      constant  ero_types.st_maxchar     := 'Related Text';
+    cn_hdr_related_num       constant  ero_types.st_maxchar     := 'Related Num' ;
+    cn_hdr_msgno             constant  ero_types.st_maxchar     := 'Msg No'      ;
+    cn_hdr_msgtxt            constant  ero_types.st_maxchar     := 'Msg Text'    ;
+    cn_hdr_seq               constant  ero_types.st_maxchar     := 'Seq'         ;
+
+    -- Below v_len_* variabels are used to keep track of the length of the longest value in each column.
+    -- This length has a minimum of the length of the corresponding header.
+    v_len_mvowner          integer  := length(cn_hdr_mvowner        );
+    v_len_mvname           integer  := length(cn_hdr_mvname         );
+    v_len_capability_name  integer  := length(cn_hdr_capability_name);
+    v_len_possible         integer  := length(cn_hdr_possible       );
+    v_len_related_text     integer  := length(cn_hdr_related_text   );
+    v_len_related_num      integer  := length(cn_hdr_related_num    );
+    v_len_msgno            integer  := length(cn_hdr_msgno          );
+    v_len_msgtxt           integer  := length(cn_hdr_msgtxt         );
+    v_len_seq              integer  := length(cn_hdr_seq            );
+
+    -- Below v_aantal_* variabels are used to keep track of the number of capabilities the mview has and has not.
+    -- Unexpected different values are also counted.
+    -- ook overig geteld.
+    v_count_yes            integer  := 0;
+    v_count_no             integer  := 0;
+    v_count_else           integer  := 0;
+
+    vr_cap     sys.explainmvarraytype ;
+
+
+    procedure analyse_values
+    is
+    begin   -- analyse_values
+      for i_cap in vr_cap.first .. vr_cap.last
+      loop
+        v_len_mvowner         := greatest (v_len_mvowner        , coalesce(length(vr_cap(i_cap).mvowner             ),0));
+        v_len_mvname          := greatest (v_len_mvname         , coalesce(length(vr_cap(i_cap).mvname              ),0));
+        v_len_capability_name := greatest (v_len_capability_name, coalesce(length(vr_cap(i_cap).capability_name     ),0));
+        v_len_possible        := greatest (v_len_possible       , coalesce(length(vr_cap(i_cap).possible            ),0));
+        v_len_related_text    := greatest (v_len_related_text   , coalesce(length(vr_cap(i_cap).related_text        ),0));
+        v_len_related_num     := greatest (v_len_related_num    , coalesce(length(to_char(vr_cap(i_cap).related_num)),0));
+        v_len_msgno           := greatest (v_len_msgno          , coalesce(length(to_char(vr_cap(i_cap).msgno      )),0));
+        v_len_msgtxt          := greatest (v_len_msgtxt         , coalesce(length(vr_cap(i_cap).msgtxt              ),0));
+        v_len_seq             := greatest (v_len_seq            , coalesce(length(to_char(vr_cap(i_cap).seq        )),0));
+
+        case vr_cap(i_cap).possible
+          when cn_capability_ja  then v_count_yes     := v_count_yes     + 1;
+          when cn_capability_nee then v_count_no      := v_count_no      + 1;
+          else                        v_count_else    := v_count_else    + 1;
+        end case;
+      end loop;
+    end analyse_values;
+
+
+    function print_col
+    (p_value    in  ero_types.st_maxchar
+    ,p_length   in  integer
+    ,p_filler   in  ero_types.st_maxchar
+    ,p_do_print in  boolean
+    )
+    return ero_types.st_maxchar
+    is
+    begin   -- print_col
+      return (case
+                when p_do_print then rpad(coalesce(p_value
+                                                  ,p_filler
+                                                  )
+                                         ,p_length
+                                         ,p_filler
+                                         ) ||cn_col_separator
+                else                 null
+              end
+             );
+    end print_col;
+
+
+    procedure print_header
+    (p_type   in  ero_types.st_maxchar
+    )
+    is
+    begin   -- print_header
+      ero_pl.pl;
+      ero_pl.pl ('##################################################################');
+      case p_type
+        when cn_capability_ja  then ero_pl.pl ('# Materialized View has below mentioned capacities            #');
+        when cn_capability_nee then ero_pl.pl ('# Materialized View does NOT have below mentioned capacities  #');
+        else                        ero_pl.pl ('# Unknown capacities indicatorfor  below mentioned capacities #');
+      end case;
+      ero_pl.pl ('##################################################################');
+      ero_pl.pl;
+      ero_pl.pl (print_col (cn_hdr_seq                , v_len_seq            , cn_col_filler   , cn_print_seq            ) ||
+                 print_col (cn_hdr_mvowner            , v_len_mvowner        , cn_col_filler   , cn_print_mvowner        ) ||
+                 print_col (cn_hdr_mvname             , v_len_mvname         , cn_col_filler   , cn_print_mvname         ) ||
+                 print_col (cn_hdr_capability_name    , v_len_capability_name, cn_col_filler   , cn_print_capability_name) ||
+                 print_col (cn_hdr_possible           , v_len_possible       , cn_col_filler   , cn_print_possible       ) ||
+                 print_col (cn_hdr_related_text       , v_len_related_text   , cn_col_filler   , cn_print_related_text   ) ||
+                 print_col (cn_hdr_related_num        , v_len_related_num    , cn_col_filler   , cn_print_related_num    ) ||
+                 print_col (cn_hdr_msgno              , v_len_msgno          , cn_col_filler   , cn_print_msgno          ) ||
+                 print_col (cn_hdr_msgtxt             , v_len_msgtxt         , cn_col_filler   , cn_print_msgtxt         )
+                );
+
+      ero_pl.pl (print_col (cn_col_underline          , v_len_seq            , cn_col_underline, cn_print_seq            ) ||
+                 print_col (cn_col_underline          , v_len_mvowner        , cn_col_underline, cn_print_mvowner        ) ||
+                 print_col (cn_col_underline          , v_len_mvname         , cn_col_underline, cn_print_mvname         ) ||
+                 print_col (cn_col_underline          , v_len_capability_name, cn_col_underline, cn_print_capability_name) ||
+                 print_col (cn_col_underline          , v_len_possible       , cn_col_underline, cn_print_possible       ) ||
+                 print_col (cn_col_underline          , v_len_related_text   , cn_col_underline, cn_print_related_text   ) ||
+                 print_col (cn_col_underline          , v_len_related_num    , cn_col_underline, cn_print_related_num    ) ||
+                 print_col (cn_col_underline          , v_len_msgno          , cn_col_underline, cn_print_msgno          ) ||
+                 print_col (cn_col_underline          , v_len_msgtxt         , cn_col_underline, cn_print_msgtxt         )
+                );
+    end print_header;
+
+
+    procedure print_lines
+    (p_type    in  ero_types.st_maxchar
+    )
+    is
+    begin   -- print_lines
+      if (    p_type          = cn_capability_ja
+          and v_count_yes     > 0
+         )
+      or (    p_type          = cn_capability_nee
+          and v_count_no      > 0
+         )
+      or (    p_type          = cn_capability_overig
+          and v_count_else    > 0
+         )
+      then
+        for i_cap in vr_cap.first .. vr_cap.last
+        loop
+          if i_cap = vr_cap.first
+          then
+            print_header (p_type);
+          end if;
+
+          if p_type  = vr_cap(i_cap).possible
+          or (    p_type                  = cn_capability_overig
+              and vr_cap(i_cap).possible not in (cn_capability_ja
+                                                 ,cn_capability_nee
+                                                 )
+             )
+          then
+            ero_pl.pl (print_col (to_char(vr_cap(i_cap).seq)        , v_len_seq            , cn_col_filler   , cn_print_seq            ) ||
+                       print_col (vr_cap(i_cap).mvowner             , v_len_mvowner        , cn_col_filler   , cn_print_mvowner        ) ||
+                       print_col (vr_cap(i_cap).mvname              , v_len_mvname         , cn_col_filler   , cn_print_mvname         ) ||
+                       print_col (vr_cap(i_cap).capability_name     , v_len_capability_name, cn_col_filler   , cn_print_capability_name) ||
+                       print_col (vr_cap(i_cap).possible            , v_len_possible       , cn_col_filler   , cn_print_possible       ) ||
+                       print_col (vr_cap(i_cap).related_text        , v_len_related_text   , cn_col_filler   , cn_print_related_text   ) ||
+                       print_col (to_char(vr_cap(i_cap).related_num), v_len_related_num    , cn_col_filler   , cn_print_related_num    ) ||
+                       print_col (to_char(vr_cap(i_cap).msgno)      , v_len_msgno          , cn_col_filler   , cn_print_msgno          ) ||
+                       print_col (vr_cap(i_cap).msgtxt              , v_len_msgtxt         , cn_col_filler   , cn_print_msgtxt         )
+                      );
+          end if;
+        end loop;
+      end if;
+    end print_lines;
+
+  begin   -- mv_capabilities
+    dbms_mview.explain_mview (mv         => p_mv_stmnt
+                             ,msg_array  => vr_cap
+                             );
+
+    if vr_cap.count = 0
+    then
+      rae ('No explain-results found');
+    end if;
+
+    analyse_values;
+
+    print_lines (cn_capability_ja    );
+    print_lines (cn_capability_nee   );
+    print_lines (cn_capability_overig);
+  end mv_capabilities;
+
+end ero_utl;
+/
+sho err

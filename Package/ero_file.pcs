@@ -1,0 +1,304 @@
+prompt ===> ero_file
+create or replace package ero_file
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_file
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Functionality for manipulating files
+  -- ********************************************************************************
+
+  cn_package_name     constant   ero_types.st_identifier          := $$plsql_unit;
+  
+  -- Type at_file is used both in- and outside this package to declare associative arrays
+  -- to hold the contents of a file after it's been read from disk, or before it's written
+  -- to disk.
+  -- Every fileline will be in a separate record of the associative array
+  -- Every line can have a length, equal to the maximum size of a varchar2
+
+  type at_file  is  table of ero_types.st_maxchar  index by pls_integer;
+
+
+  cn_tab2file_append    constant   ero_types.st_singlechar    := ero_const.cn_appendmode;     -- Writemode 'Append'
+  cn_tab2file_write     constant   ero_types.st_singlechar    := ero_const.cn_writemode;      -- Writemode 'Overwrite'
+
+
+  -- Procedure closes a file if it's open.
+  -- If it isn't, no action is taken.
+  procedure silent_close
+  (p_file  in  utl_file.file_type
+  );
+
+
+  -- Procedure places the contents of a file on disk into a collection (through overloading either an associative array 
+  -- of type at_file, or a nested table of type nt_ero_maxchar).
+  -- Each line in the file is placed in a separate record.
+  -- If the collection that is provided by p_table already contains records, the file on disk is appended to the end.
+  -- This makes it possible to read multiple files and combine them into the same collection.
+  -- IT IS THE RESPONSIBILITY OF THE CALLING PROCEDURE TO CLEAR THE COLLECTION IF IT'S BEEN USED BEFORE AND
+  -- COMBINING FILES IS NOT WANTED.
+  -- The collection and the number of lines that have been added to it will be returned.
+  -- The maximum size for each line is the maximum size of a varchar2.
+  procedure file2tab
+  (p_location     in      varchar2
+  ,p_file         in      varchar2
+  ,p_table        in out  at_file
+  ,p_lines        in out  integer
+  );
+
+  procedure file2tab
+  (p_location     in      varchar2
+  ,p_file         in      varchar2
+  ,p_table        in out  nt_ero_maxchar
+  ,p_lines        in out  integer
+  );
+
+
+  -- Procedure writes every record of a collection (through overloading either an associative array 
+  -- of type at_file, or a nested table of type nt_ero_maxchar) to a line in a file on disk
+  procedure tab2file
+  (p_location     in   varchar2
+  ,p_file         in   varchar2
+  ,p_table        in   at_file
+  ,p_mode         in   varchar2        default cn_tab2file_write
+  );
+
+  procedure tab2file
+  (p_location     in   varchar2
+  ,p_file         in   varchar2
+  ,p_table        in   nt_ero_maxchar
+  ,p_mode         in   varchar2        default cn_tab2file_write
+  );
+
+
+  -- Function indicates whether the given file exists in the given location
+  function file_exists
+  (p_location     in   varchar2
+  ,p_file         in   varchar2
+  )
+  return boolean
+  ;
+
+
+  -- Function returns the number of lines in a file on disk
+  -- If an error occurs -1 is returned.
+  function no_of_lines
+  (p_location     in   varchar2
+  ,p_file         in   varchar2
+  )
+  return integer
+  ;
+
+
+  -- Function is overloaded in two forms:
+  -- Form 1: returns the line with the specified linenumber from a file on disk as a varchar2.
+  --         If the file does not have a line with the specified number, null will be returned.
+  -- Form 2: returns all lines between the specified first and last linenumber from a file on disk
+  --         in a collection of type at_file.
+  --         If first linenumber is not specified (null) or is lower than the linenumber of the first line in 
+  --         the file, the request is considered to be: "starting from the first line of the file"
+  --         If last linenumber is not specified (null) or is higher than the linenumber of the last line in 
+  --         the file, the request is considered to be: "until (and including) the last line of the file"
+  --         If the specified range is completely outside the boudaries of the file, or if lastline is smaller 
+  --         than firstline the colection that is returned will be empty.
+  function get_file_line
+  (p_location     in   varchar2
+  ,p_file         in   varchar2
+  ,p_lineno       in   integer
+  )
+  return varchar2
+  ;
+
+  function get_file_line
+  (p_location     in   varchar2
+  ,p_file         in   varchar2
+  ,p_firstline    in   integer
+  ,p_lastline     in   integer
+  )
+  return at_file
+  ;
+
+
+  -- Procedure is overloaded in two forms:
+  -- Form 1: Replaces the line with the specified linenumber in an existing file on disk with the specified line
+  -- Form 2: Replaces lines in an existing file on disk, starting with the line at the specified linenumber with
+  --         the lines in the provided collection.
+  --         If, for example, in the collection records 1,2,3 and 10 exist (NOTE:
+  --         "EXIST", not "ARE NOT NULL") and the specified start linenumber is 5, then lines with linenumber
+  --         5,6,7 and 14 are replaced
+  -- Examples:
+  -- Assume an existing file containing 10 lines
+  -- Form 1, p_lineno = 5, p_line = 'My Newline'
+  --     Original line at linenumber 5 will be replaced by 'My Newline', the rest of the file remains unchanged
+  -- Form 1, p_lineno = 15, p_line = 'My Newline'
+  --     linenumbers 11 through 14 will be created as empty lines
+  --     new line 'My Newline' will be placed at linenumber 15 
+  -- Form 1, p_lineno = 0, p_line = 'My Newline'
+  --     New line 'My Newline' ia added before the current first line of the file
+  --     All original lines will obviously move one position
+  -- Form 1, p_lineno = -5, p_line = 'My Newline'
+  --     New line 'My Newline', followed by 5 empty lines (-4, -3, -2, -1, 0) are added nefore the current 
+  --     first line of the file
+  --     All original lines will obviously move six positions
+  -- If the file doesn't exist, it will be created
+  procedure set_file_line
+  (p_location  in   varchar2
+  ,p_file      in   varchar2
+  ,p_lineno    in   integer
+  ,p_line      in   varchar2
+  );
+
+  procedure set_file_line
+  (p_location  in   varchar2
+  ,p_file      in   varchar2
+  ,p_lineno    in   integer
+  ,p_line      in   at_file
+  );
+
+
+  -- Procedure is overloaded in two forms:
+  -- Form 1: Inserts a line at the specified linenumber in an existing file on disk.
+  -- Form 2: Inserts lines from a collection, starting at the specified linenumber, into 
+  --         an existing file on disk. If the collection is sparse the missing records are
+  --         considered to be empty lines. So, if collection contains 2 records, one at index=1
+  --         and one at index=10, a block of 10 lines will be inserted of which the first and 
+  --         the last will have the specified values and the ones inbetween are empty
+  -- Examples:
+  -- Assume an existing file containing 10 lines
+  -- Form 1, p_lineno = 5, p_line = 'My Newline'
+  --     lines with linenumber 5 through 10 will be moved to linenumbers 6 through 11
+  --     New line will be placed at linenumber 5
+  -- Form 1, p_lineno = 15, p_line = 'My Newline'
+  --     lines with linenumber 11 through 14 will be created as empty lines
+  --     Mew line will be created at linenumber 15
+  -- Form 1, p_lineno = 0, p_line = 'My Newline'
+  --     New line will be added before all current lines
+  -- Form 1, p_lineno = -5, p_line = 'My Newline'
+  --     New line, followed by 5 empty lines, will be added before all current lines
+  -- If the file does not exist, it will be created
+  procedure insert_file_line
+  (p_location  in   varchar2
+  ,p_file      in   varchar2
+  ,p_lineno    in   integer
+  ,p_line      in   varchar2
+  );
+
+  procedure insert_file_line
+  (p_location  in   varchar2
+  ,p_file      in   varchar2
+  ,p_lineno    in   integer
+  ,p_line      in   at_file
+  );
+
+
+  -- Procedure deletes 1, or more (if p_line_end is not null) , lines from a file
+  -- If no line with the specified linenumber exists, the file remains unchanged
+  -- If the file does not exist, no action is taken, and no exception is raised.
+  -- If 1 line is to be deleted:
+  --   Supply the same value (linenumber) other than null for both p_line_start and p_line_end.
+  --   The specified line will be deleted if it exists
+  -- If a block of lines is to be deleted:
+  --   Supply the first and last linenumber of the block in p_line_start and p_line_end
+  --   Only 1 of both may be null.
+  --   If p_line_start is null the block is assumed to start with the first line of the file,
+  --   if p_line_end is null the block is assumed to end with the last line of the file.
+  --   The order of the two linenumbers is unimportant (except of course if one is null). 
+  --   Lines 10-15 and 15-10 will be treated as the same block of lines.
+  --   The specified lines and all lines inbetween will be deleted
+  procedure delete_file_line
+  (p_location    in   varchar2
+  ,p_file        in   varchar2
+  ,p_line_start  in   integer
+  ,p_line_end    in   integer    default null
+  );
+
+
+  -- Procedure retrieves the next line from the specified file. This line is returned
+  -- in parameter p_line.
+  -- If the end of the file is reached p_line will be NULL and p_eof will be TRUE.
+  -- Until then p_eof will return FALSE;
+  -- Procedure is intended to step through a file in the conventional line by line way
+  -- without needing to build constructs for handling no_data_found exceptions at the 
+  -- end of the file
+  -- The calling procedure is responsible for opening and closing the file
+  procedure get_next_line
+  (p_file  in      utl_file.file_type
+  ,p_line     out  varchar2
+  ,p_eof      out  boolean
+  );
+
+
+  -- Function recieves  a line which is devided into columnvalues by means of a 
+  -- separator character ('commaseperated values') and returns the value of the column
+  -- that is identified by its sequencenumber in parameter p_column.
+  -- By default the character that is used as separator is semicolon(;), but a different one
+  -- kan be supplied.
+  -- If the line has less columns than the number that is provided by parameter p_column, an
+  -- exception is raised
+  -- Examples:
+  --   - If variable v_line contains the string '123;ABC;456;DEFGH;7890'
+  --     Then the call get_column(v_line,4) will result in 'DEFGH'.
+  --   - If variable v_line contains the string '123,ABC,456,DEFGH,7890'
+  --     Then the call get_column(v_line,3,',') will result in '456'.
+  function get_column
+  (p_line       in  varchar2
+  ,p_column     in  pls_integer
+  ,p_separator  in  varchar2     default ';'
+  )
+  return varchar2;
+
+
+  -- Procedure splits a filename into its Path, The basename (without extension) and The extension
+  -- If no directory delimiters are detected, the name must be just a filename, and Path will be returned as NULL
+  -- If no dot is detected AFTER the last directory delimiter, the file does not have an extension and 
+  -- extension will be returned as NULL.
+  procedure split_filename
+  (p_name       in      ero_types.st_maxchar
+  ,p_basename   in out  ero_types.st_maxchar
+  ,p_extension  in out  ero_types.st_maxchar
+  ,p_path       in out  ero_types.st_maxchar
+  );
+
+
+  -- Function uses split_filename (See its comments) to split the provided filename, and then returnes the
+  -- basename of the file (name without extension or path)
+  function file_basename
+  (p_name   in  ero_types.st_maxchar
+  )
+  return ero_types.st_maxchar
+  ;
+
+
+  -- Function uses split_filename (See its comments) to split the provided filename, and then returnes the
+  -- extension of the file
+  function file_extension
+  (p_name   in  ero_types.st_maxchar
+  )
+  return ero_types.st_maxchar
+  ;
+
+
+  -- Function uses split_filename (See its comments) to split the provided filename, and then returnes the
+  -- path of the file
+  function file_path
+  (p_name   in  ero_types.st_maxchar
+  )
+  return ero_types.st_maxchar
+  ;
+
+
+end  ero_file;
+/
+sho err

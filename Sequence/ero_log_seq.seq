@@ -1,0 +1,11 @@
+prompt ===> ero_log_seq
+create sequence ero_log_seq
+ increment by 1
+ start with   1
+ minvalue     1
+ maxvalue     999999999
+ nocycle
+ nocache
+ noorder
+;
+

@@ -1,0 +1,251 @@
+prompt ===> ero_directory
+create or replace package body ero_directory
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_directory
+  -- * Version     : 01.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Directory related functionality
+  -- *********************************************************************************
+
+  cn_contents_all           constant   ero_types.st_dir_contents_type   := 0;
+  cn_contents_files         constant   ero_types.st_dir_contents_type   := 1;
+  cn_contents_directories   constant   ero_types.st_dir_contents_type   := 1;
+
+
+  function contents_type_files
+  return ero_types.st_dir_contents_type
+  is 
+  begin   -- contents_type_files
+    return (cn_contents_files);
+  end contents_type_files;
+
+
+  function contents_type_directories
+  return ero_types.st_dir_contents_type
+  is 
+  begin   -- contents_type_directories
+    return (cn_contents_directories);
+  end contents_type_directories;
+    
+
+  function contents_type_all
+  return ero_types.st_dir_contents_type
+  is 
+  begin   -- contents_type_all
+    return (cn_contents_all);
+  end contents_type_all;
+ 
+  
+  function file_indicator
+  return ero_types.st_dirlist_type_indicator
+  result_cache
+  is
+  begin   -- file_indicator
+    return (ero_basedata.value_chr ('dirlist_file_indicator'));
+  end file_indicator;
+  
+
+  function dir_indicator
+  return ero_types.st_dirlist_type_indicator
+  result_cache
+  is
+  begin   -- dir_indicator
+    return (ero_basedata.value_chr ('dirlist_dir_indicator'));
+  end dir_indicator;
+  
+
+  procedure get_directory_contents
+  (p_directory       in   varchar2     -- must be unconstrained datatypes
+  ,p_file_indicator  in   varchar2     -- must be unconstrained datatypes
+  ,p_dir_indicator   in   varchar2     -- must be unconstrained datatypes
+  )
+  as language java
+  name 'EroDirList.getList( java.lang.String , java.lang.String , java.lang.String)';
+
+
+  function physical_directory
+  (p_directory   in  ero_types.st_dir_object_name
+  )
+  return ero_types.st_physical_path
+  result_cache
+  is
+
+    c_block_name   constant  ero_types.st_identifier   := 'physical_directory';
+
+    v_result    ero_types.st_physical_path;
+
+  begin   -- physical_directory
+
+    -- Retrieve the directory from the supplied Oracle Directory Object
+    select directory_path
+    into   v_result
+    from   all_directories
+    where  directory_name = upper(p_directory)
+    ;
+  
+    return (v_result);
+
+  exception
+    when no_data_found
+    then
+      -- Directory not found as an Orale Directory Object
+      -- It's possibly already a physical directory, so return unchanged
+      return (p_directory);
+  
+    when others    
+    then
+      ero_error.show_error (c_block_name);
+      raise;
+              
+  end physical_directory;
+
+
+  function is_oracle_directory_object
+  (p_directory   in  ero_types.st_maxchar
+  )
+  return boolean
+  is
+  
+    c_block_name   constant  ero_types.st_identifier   := 'is_oracle_directory_object';
+
+    v_result   boolean;
+    
+  begin   -- is_oracle_directory_object
+    
+    v_result := case 
+                  when physical_directory(p_directory => p_directory) = p_directory
+                  then false
+                  else true
+                end;
+    
+    return (v_result);
+  
+  exception  
+    when others    
+    then
+      ero_error.show_error (c_block_name);
+      raise;
+              
+  end is_oracle_directory_object;
+
+
+  function trailing_dirdelimiter
+  (p_pathname  in  ero_types.st_physical_path
+  ,p_wanted    in  boolean
+  )
+  return  ero_types.st_physical_path
+  is
+  
+    c_block_name   constant  ero_types.st_identifier   := 'trailing_dirdelimiter';
+
+    v_previous   ero_types.st_maxchar;
+    v_result     ero_types.st_maxchar;
+    
+  begin   -- trailing_dirdelimiter
+
+    v_result := p_pathname;
+  
+    -- Only perform actions if the pathname parameter contains a physical directory
+    -- If it contains the name of an Oracle Directory Object, don't change anything
+    if not is_oracle_directory_object (p_pathname)
+    then
+      -- It's about a physical directory
+      -- First remove directory delimiters from the end (if any) and spaces from the end and start (if any)
+      while coalesce(v_result, ero_const.cn_nullstring) <> coalesce(v_previous, ero_const.cn_nullstring)
+      loop
+        v_previous := v_result;
+        v_result   := trim(rtrim(trim(v_result),ero_const.cn_dirdelimiter));
+      end loop;
+  
+      -- Now, if a trailing directory delimiter is wanted, place one at the end
+      v_result := case
+                    when p_wanted      then v_result || ero_const.cn_dirdelimiter
+                    when not p_wanted  then v_result
+                    else                     p_pathname
+                  end;
+    end if;
+  
+    return (v_result);
+
+  exception  
+    when others    
+    then
+      ero_error.show_error (c_block_name);
+      raise;
+              
+  end trailing_dirdelimiter;
+
+
+  -- Function returns a collection containing the contents of an Oracle Directory Object
+  -- The calling schema must have appropriate privileges on the requested directory object
+  function dir_contents
+  (p_directory        in  ero_types.st_dir_object_name
+  ,p_contents_type    in  ero_types.st_dir_contents_type   default  contents_type_all
+  )
+  return nt_ero_dir_contents
+  is
+
+    c_block_name   constant  ero_types.st_identifier   := 'dir_contents';
+
+    v_result_nt   nt_ero_dir_contents;
+    v_directory   ero_types.st_physical_path;
+    
+    -- The java procedure populates a GTT, so DML happens, which is not allowed if this tablefunction is used in a query
+    -- Hence autonomous transaction is needed
+    pragma autonomous_transaction;
+
+  begin   -- dir_contents
+
+    v_directory := physical_directory
+                     (p_directory  => p_directory
+                     );
+    
+    if v_directory is null
+    then
+      ero_utl.rae ('No directory '||p_directory||' available for this schema');
+    end if;
+    
+    get_directory_contents
+      (p_directory       => v_directory
+      ,p_file_indicator  => file_indicator
+      ,p_dir_indicator   => dir_indicator
+      );
+  
+    select ot_ero_file_properties
+             (p_pathname     => dir.pathname
+             ,p_filetype     => dir.filetype
+             ,p_filebytes    => dir.filebytes
+             ,p_lastmodified => dir.lastmodified
+             )
+    bulk collect
+    into v_result_nt
+    from   ero_gtt_dir_list    dir
+    ;
+  
+    commit;  -- needed because of autonomous transaction
+  
+    return (v_result_nt);
+  
+  exception  
+    when others    
+    then
+      ero_error.show_error (c_block_name);
+      raise;
+              
+  end dir_contents;
+
+end ero_directory;
+/
+sho err

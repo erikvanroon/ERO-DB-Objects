@@ -1,0 +1,167 @@
+prompt ===> ero_const
+create or replace package ero_const
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- *********************************************************************************
+  -- * Name module : ero_const
+  -- * Version     : Erik van Roon
+  -- * Author      : 02.00
+  -- * Function    : Centralised definition of constants and subtypes
+  -- *********************************************************************************
+
+  cn_package_name                 constant  ero_types.st_identifier  := $$plsql_unit;
+
+
+  -- Special Characters
+  cn_eol                          constant  ero_types.st_singlechar  := chr(10);
+  cn_quote                        constant  ero_types.st_singlechar  := '''';
+  cn_doublequote                  constant  ero_types.st_singlechar  := '"';
+  cn_colon                        constant  ero_types.st_singlechar  := ':';
+  cn_semicolon                    constant  ero_types.st_singlechar  := ';';
+  cn_space                        constant  ero_types.st_singlechar  := ' ';
+  cn_dot                          constant  ero_types.st_singlechar  := '.';
+  cn_comma                        constant  ero_types.st_singlechar  := ',';
+  cn_at                           constant  ero_types.st_singlechar  := '@';
+  cn_equal                        constant  ero_types.st_singlechar  := '=';
+  cn_hash                         constant  ero_types.st_singlechar  := '#';
+  cn_underscore                   constant  ero_types.st_singlechar  := '_';
+  cn_minus                        constant  ero_types.st_singlechar  := '-';
+  cn_tilde                        constant  ero_types.st_singlechar  := '~';
+  cn_parenthesis_open             constant  ero_types.st_singlechar  := '(';
+  cn_parenthesis_close            constant  ero_types.st_singlechar  := ')';
+  cn_pipe                         constant  ero_types.st_singlechar  := '|';
+  cn_ampersant                    constant  ero_types.st_singlechar  := chr(38);   -- using chr() to prevent having to 'set define off' to create this package
+  cn_concat                       constant  ero_types.st_doublechar  := cn_pipe||cn_pipe;
+  cn_dirdelimiter                 constant  ero_types.st_singlechar  := sys_context('userenv', 'platform_slash');         -- delimiter for directories in current os
+
+
+  -- Date/time formatmasks
+  cn_date_fmt                     constant  ero_types.st_format      := 'dd-mm-yyyy';
+  cn_time_fmt                     constant  ero_types.st_format      := 'hh24:mi:ss';
+  cn_datetime_fmt                 constant  ero_types.st_format      := cn_date_fmt||cn_space||cn_time_fmt;
+  cn_date_short_fmt               constant  ero_types.st_format      := 'ddmmyyyy';
+  cn_time_short_fmt               constant  ero_types.st_format      := 'hh24miss';
+  cn_datetime_short_fmt           constant  ero_types.st_format      := cn_date_short_fmt||cn_time_short_fmt;
+  cn_date_sortable_fmt            constant  ero_types.st_format      := 'yyyy-mm-dd';
+  cn_datetime_sortable_fmt        constant  ero_types.st_format      := cn_date_sortable_fmt||cn_space||cn_time_fmt;
+  cn_date_sortable_short_fmt      constant  ero_types.st_format      := 'yyyymmdd';
+  cn_datetime_sortable_short_fmt  constant  ero_types.st_format      := cn_date_sortable_short_fmt||cn_time_short_fmt;
+
+  -- Number formatmasks
+  cn_integer_fmt                  constant  ero_types.st_format      := 'fm9g999g999g999g999g999g999g999g999';
+  cn_integer_nogroup_fmt          constant  ero_types.st_format      := 'fm9999999999999999999999999';
+  cn_percentage_2dec_fmt          constant  ero_types.st_format      := 'fm990d90';
+  cn_percentage_1dec_fmt          constant  ero_types.st_format      := 'fm990d0';
+  cn_percentage_0dec_fmt          constant  ero_types.st_format      := 'fm990';
+
+  -- true/false
+  cn_n_true                       constant  integer                        := 1;
+  cn_c_true                       constant  ero_types.st_boolean_string    := 'TRUE';
+
+  cn_n_false                      constant  integer                        := 0;
+  cn_c_false                      constant  ero_types.st_boolean_string    := 'FALSE';
+
+  -- String to use in case of null
+  cn_nullstring                   constant  ero_types.st_shortstring := '<<NULL>>';
+
+  -- NLS-independent number-of-day-of-week indicators
+  cn_d_monday                     constant  ero_types.st_singlechar  := trim(to_char(to_date('01011900',cn_date_short_fmt),'d'));
+  cn_d_tuesday                    constant  ero_types.st_singlechar  := trim(to_char(to_date('02011900',cn_date_short_fmt),'d'));
+  cn_d_wednesday                  constant  ero_types.st_singlechar  := trim(to_char(to_date('03011900',cn_date_short_fmt),'d'));
+  cn_d_thursday                   constant  ero_types.st_singlechar  := trim(to_char(to_date('04011900',cn_date_short_fmt),'d'));
+  cn_d_friday                     constant  ero_types.st_singlechar  := trim(to_char(to_date('05011900',cn_date_short_fmt),'d'));
+  cn_d_saturday                   constant  ero_types.st_singlechar  := trim(to_char(to_date('06011900',cn_date_short_fmt),'d'));
+  cn_d_sunday                     constant  ero_types.st_singlechar  := trim(to_char(to_date('07011900',cn_date_short_fmt),'d'));
+
+  -- NLS-independent name-of-day-of-week indicators
+  cn_day_monday                   constant  ero_types.st_weekday_names  := Trim(to_char(to_date('01011900',cn_date_short_fmt),'DAY'));
+  cn_day_tuesday                  constant  ero_types.st_weekday_names  := Trim(to_char(to_date('02011900',cn_date_short_fmt),'DAY'));
+  cn_day_wednesday                constant  ero_types.st_weekday_names  := Trim(to_char(to_date('03011900',cn_date_short_fmt),'DAY'));
+  cn_day_thursday                 constant  ero_types.st_weekday_names  := Trim(to_char(to_date('04011900',cn_date_short_fmt),'DAY'));
+  cn_day_friday                   constant  ero_types.st_weekday_names  := Trim(to_char(to_date('05011900',cn_date_short_fmt),'DAY'));
+  cn_day_saturday                 constant  ero_types.st_weekday_names  := Trim(to_char(to_date('06011900',cn_date_short_fmt),'DAY'));
+  cn_day_sunday                   constant  ero_types.st_weekday_names  := Trim(to_char(to_date('07011900',cn_date_short_fmt),'DAY'));
+
+  -- modes in which a file can be opened using utl_file
+  cn_readmode                     constant  ero_types.st_singlechar  := 'R';
+  cn_writemode                    constant  ero_types.st_singlechar  := 'W';
+  cn_appendmode                   constant  ero_types.st_singlechar  := 'A';
+
+  -- Identifications for special days
+  cn_newyearsday                  constant  integer        :=  1;            -- Nieuwjaarsdag
+  cn_goodfriday                   constant  integer        :=  2;            -- Goede Vrijdag
+  cn_eastersunday                 constant  integer        :=  3;            -- Paaszondag
+  cn_eastermonday                 constant  integer        :=  4;            -- Paasmaandag
+  cn_royaltyday                   constant  integer        :=  5;            -- Vorstendag (konings-/Koninginnedag)
+  cn_ascensionday                 constant  integer        :=  6;            -- Hemelvaartsdag
+  cn_whitsubday                   constant  integer        :=  7;            -- Pinksterzondag
+  cn_whitmonday                   constant  integer        :=  8;            -- Pinkstermaandag
+  cn_christmasday                 constant  integer        :=  9;            -- Eerste Kerstdag
+  cn_boxingday                    constant  integer        := 10;            -- Tweede Kerstdag
+  cn_remembranceday               constant  integer        := 11;            -- Dodenherdenking
+  cn_liberationday                constant  integer        := 12;            -- Bevrijdingsdag
+  cn_prinsday                     constant  integer        := 13;            -- Prinsjesdag
+  cn_daylightsaving_start         constant  integer        := 14;            -- Zomertijd Start
+  cn_daylightsaving_end           constant  integer        := 15;            -- Zomertijd Eind
+  cn_mothersday                   constant  integer        := 16;            -- Moederdag
+  cn_fathersday                   constant  integer        := 17;            -- Vaderdag
+
+  -- Dates of special days which have a fixed date (format = MMDD)
+  cn_dat_newyearsday              constant  ero_types.st_daymonth_string  := '0101';        -- Nieuwjaarsdag
+  cn_dat_remembranceday           constant  ero_types.st_daymonth_string  := '0504';        -- Dodenherdenking
+  cn_dat_liberationday            constant  ero_types.st_daymonth_string  := '0505';        -- Bevrijdingsdag
+  cn_dat_christmasday             constant  ero_types.st_daymonth_string  := '1225';        -- Eerste Kerstdag
+  cn_dat_boxingday                constant  ero_types.st_daymonth_string  := '1226';        -- Tweede Kerstdag
+
+  -- Search directions
+  cn_search_forward               constant  ero_types.st_shortstring   := 'Forward' ;
+  cn_search_backward              constant  ero_types.st_shortstring   := 'Backward';
+  cn_search_nearest               constant  ero_types.st_shortstring   := 'Nearest' ;
+
+  -- Period identifiers
+  cn_period_month                 constant  ero_types.st_singlechar    := 'M';
+  cn_period_week                  constant  ero_types.st_singlechar    := 'W';
+
+  -- When in a period to plan reminders
+  cn_period_start                 constant  ero_types.st_shortstring   := 'Period Start';
+  cn_period_end                   constant  ero_types.st_shortstring   := 'Period End'  ;
+  cn_period_both                  constant  ero_types.st_shortstring   := 'Periode Both';
+
+  -- Datatype indicators
+  cn_datatype_n                   constant  ero_types.st_identifier  := 'N'        ;
+  cn_datatype_num                 constant  ero_types.st_identifier  := 'NUM'      ;
+  cn_datatype_number              constant  ero_types.st_identifier  := 'NUMBER'   ;
+  cn_datatype_c                   constant  ero_types.st_identifier  := 'C'        ;
+  cn_datatype_chr                 constant  ero_types.st_identifier  := 'CHR'      ;
+  cn_datatype_char                constant  ero_types.st_identifier  := 'CHAR'     ;
+  cn_datatype_character           constant  ero_types.st_identifier  := 'CHARACTER';
+  cn_datatype_varchar2            constant  ero_types.st_identifier  := 'VARCHAR2' ;
+  cn_datatype_d                   constant  ero_types.st_identifier  := 'D'        ;
+  cn_datatype_dat                 constant  ero_types.st_identifier  := 'DAT'      ;
+  cn_datatype_date                constant  ero_types.st_identifier  := 'DATE'     ;
+
+  -- email
+  cn_smtp_host                    constant  ero_types.st_shortstring := 'smtp.xs4all.nl';
+  cn_smtp_port                    constant  integer                  := 465             ;
+  cn_mail_from                    constant  ero_types.st_shortstring := 'noreply.'||sys_context('userenv','session_user')||'@'||sys_context('userenv','db_name');
+
+  -- 'Constante' containing maximum length of identifiers (30 before 12.2, 128 as of 12.2, later: ??)
+  function cn_max_identifier_length
+  return integer
+  ;
+
+
+end ero_const;
+/
+sho err

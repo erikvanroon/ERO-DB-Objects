@@ -1,0 +1,17 @@
+prompt ===> ero_gtt_dir_list
+
+create global temporary table ero_gtt_dir_list
+(pathname       varchar2(255)
+,filetype       varchar2(4)
+,filebytes      number
+,lastmodified   date
+)
+on commit preserve rows
+/
+
+comment on table  ero_gtt_dir_list               is 'Temporary table to hold contents of a filesystem directory';
+
+comment on column ero_gtt_dir_list.pathname      is 'Full name (path+name) of the entry contained by the directory.';
+comment on column ero_gtt_dir_list.filetype      is 'Type (FILE or DIR) of the entry contained by the directory.';
+comment on column ero_gtt_dir_list.filebytes     is 'For entries of type FILE, the size of the file in bytes.';
+comment on column ero_gtt_dir_list.lastmodified  is 'Date and time of last modification of the entry.';

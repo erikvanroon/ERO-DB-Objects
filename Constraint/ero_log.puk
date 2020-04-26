@@ -1,0 +1,7 @@
+prompt ===> ero_log
+alter table ero_log
+add (constraint ero_log_pk
+     primary key (id)
+     using index
+    );
+

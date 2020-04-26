@@ -1,0 +1,131 @@
+prompt ===> ero_callstack
+create or replace package ero_callstack
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_callstack
+  -- * Version     : 03.00
+  -- * Author      : Erik van Roon
+  -- * Function    : utilities for post-12c Oracle Call Stack
+  -- *********************************************************************************
+
+  cn_package_name       constant   ero_types.st_identifier := $$plsql_unit;
+  
+
+  -- Function returns the callstack as a nested table, without the records associated with 
+  -- calling this package.
+  -- The first entry is the program block that called this function
+  -- The last entry is the topmost program block in the callstack (the initially executed code that 
+  -- caused the entire callstack)
+  -- Each record contains the attributes:
+  --   - dynamic_depth          : The position in the total callstack
+  --   - lexical_depth          : The nesting level of the subprogram at that point in the callstack
+  --   - owner                  : The owner of the containing object at that point in the callstack
+  --   - containing_object      : The name of the object (e.g. package) that contains the subprogram at that point in the callstack
+  --   - subprogram_name        : The name of the subprogram at that point in the callstack (e.g. SUBFUNCTIONNAME)
+  --   - subprogram_fullname    : The full name of the subprogram at that point in the callstack (e.g. PACKAGENAME.FUNCTIONNAME.SUBFUNCTIONNAME)
+  --   - line_number            : Number of the line within the program unit containing the subprogram
+  --   - n_subprogram_hierarchy : A nested table containing the complete subprogram hierarchy to the subprogram at that point
+  --                              of the callstack (basically the separated elements of the subprogram_fullname above)
+  --                              First entry = The containing object (e.g. the package)
+  --                              Last entry = The subprogram itself
+  function callstack
+  return nt_ero_callstack
+  ;
+
+
+  -- Function returns the errorstack as a nested table.
+  -- The first entry is the location where the error occured, the rest is the propagation of the error 
+  -- through the code to where the exception got handled and this code was called
+  -- Each record contains the attributes:
+  --   - error_depth  : The position in the errorstack
+  --   - line_number  : Number of the line within the program this record of the errorstack relates to
+  --   - unit         : The unit containing the line within the program this record of the errorstack relates to (e.g. the package)
+  --   - error_number : The (positive) errornumber that occured at this line
+  --   - error_msg    : The description of the error that occured at this line
+  function errorstack
+  return nt_ero_errorstack
+  ;
+
+
+  -- Function returns a boolean, indicating whether an object is present in the callstack.
+  -- Each of the parameters is optional, to allow every possible combination of parameters to be supplied. 
+  -- If all parameters are omitted the function will return TRUE because then the question that is really 
+  -- being asked is: "is there an object in the callstack"
+  -- This will always be true.
+  -- Each parameter may contain wildcards.
+  function object_in_callstack
+  (p_objectname  in  varchar2  default null
+  ,p_objectowner in  varchar2  default null
+  ,p_objecttype  in  varchar2  default null
+  )
+  return boolean
+  ;
+
+
+  -- Function returns the line in the callstack containing data for the object that called this function.
+  function whoami
+  return ot_ero_callstack
+  ;
+
+
+  -- Function returns the line in the callstack containing data for the object that called the code which called
+  -- this function.
+  -- So:  procedure_a  calls procedure_b.  procedure_b calls called_by:
+  --      function returns data for procedure_a
+  -- If the code calling this function has not itself been called by other code, the function will return NULL.
+  function called_by
+  return ot_ero_callstack
+  ;
+
+
+  -- Function returns a boolean indicating if the code which calls this function is itself called by code 
+  -- residing within the same object (e.g. a procedure called by another procedure in the same package).
+  -- WATCH OUT: FALSE does *not* necessarily mean the code is called 'externally'. It could mean it's the 
+  --            main code (not called by other code).
+  function called_internally
+  return boolean
+  ;
+
+
+  -- Function returns a boolean indicating if the code which calls this function is itself called by code 
+  -- residing within another object (e.g. a procedure called by another procedure in another package).
+  -- WATCH OUT: FALSE does *not* necessarily mean the code is called 'internally'. It could mean it's the 
+  --            main code (not called by other code).
+  function called_externally
+  return boolean
+  ;
+
+
+  -- Function returns a boolean indicating if the code which calls this function is itself called by other code
+  function called_code
+  return boolean
+  ;
+
+
+  -- Function returns the line in the callstack at the specified position (linenumber).
+  -- 1 is the line associated with the code that called this function
+  -- 2 is the line associated with the code that called the code of line 1
+  -- Etc.
+  -- If the supplied position does not exist in the callstack, NULL is returned.
+  function stack_position
+  (p_position  in  integer
+  )
+  return ot_ero_callstack
+  ;
+
+
+end ero_callstack;
+/
+sho err

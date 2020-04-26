@@ -1,0 +1,268 @@
+prompt ===> ero_callstack
+create or replace package body ero_callstack  
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_callstack
+  -- * Version     : 03.00
+  -- * Author      : Erik van Roon
+  -- * Function    : utilities for post-12c Oracle Call Stack
+  -- *********************************************************************************
+
+  cn_calltype_internal  constant   ero_types.st_identifier := 'INTERNAL';
+  cn_calltype_external  constant   ero_types.st_identifier := 'EXTERNAL';
+  cn_calltype_notcalled constant   ero_types.st_identifier := 'NOTCALLED';
+
+
+  n_callstack   nt_ero_callstack;
+  n_errorstack  nt_ero_errorstack;
+
+
+  function callstack_found
+  return boolean
+  is
+  begin   -- callstack_found
+    return (n_callstack.count > 0);
+  end callstack_found;
+
+
+  procedure get_callstack
+  is
+    va_ucs_subprogram        utl_call_stack.unit_qualified_name;
+
+    o_callstack              ot_ero_callstack                    := ot_ero_callstack();
+    n_subprogram_hierarchy   nt_ero_identifier                   := nt_ero_identifier();
+    
+    v_skip_row       boolean          := true;
+    v_line_no        integer          := 0;
+    
+  begin   -- get_callstack
+    
+    n_callstack := nt_ero_callstack();
+
+    for i_dep in 1 .. utl_call_stack.dynamic_depth
+    loop
+      va_ucs_subprogram := utl_call_stack.subprogram (i_dep);
+      
+      -- We're not interested in the part of the callstack related to the functionality in this package
+      -- These are from 'the top' of the callstack, so skip every row until we encounter a row that is for
+      -- a program unit that is *not* in this package.
+      v_skip_row := (    v_skip_row
+                     and va_ucs_subprogram(va_ucs_subprogram.first) = cn_package_name
+                    );
+      
+      if not v_skip_row
+      then
+        v_line_no := v_line_no + 1;
+        
+        for i_sub in 1 .. va_ucs_subprogram.count
+        loop
+          n_subprogram_hierarchy.extend;
+          n_subprogram_hierarchy(n_subprogram_hierarchy.last) := va_ucs_subprogram(i_sub);
+        end loop;
+        
+        o_callstack.dynamic_depth          := v_line_no;
+        o_callstack.lexical_depth          := utl_call_stack.lexical_depth (i_dep);
+        o_callstack.owner                  := utl_call_stack.owner         (i_dep);
+        o_callstack.containing_object      := n_subprogram_hierarchy(n_subprogram_hierarchy.first);
+        o_callstack.subprogram_name        := n_subprogram_hierarchy(n_subprogram_hierarchy.last);
+        o_callstack.subprogram_fullname    := utl_call_stack.concatenate_subprogram (va_ucs_subprogram);
+        o_callstack.line_number            := utl_call_stack.unit_line     (i_dep);
+        o_callstack.n_subprogram_hierarchy := n_subprogram_hierarchy;
+        
+        n_callstack.extend;
+        n_callstack(n_callstack.last) := o_callstack;
+        
+      end if;      
+      
+    end loop;
+    
+  end get_callstack;
+
+
+  procedure get_errorstack
+  is
+
+    o_errorstack             ot_ero_errorstack                   := ot_ero_errorstack();
+    
+  begin   -- get_errorstack
+    
+    n_errorstack := nt_ero_errorstack();
+
+    for i_dep in 1 .. utl_call_stack.error_depth
+    loop
+      o_errorstack.error_depth  := i_dep;
+      o_errorstack.line_number  := utl_call_stack.backtrace_line (i_dep);
+      o_errorstack.unit         := utl_call_stack.backtrace_unit (i_dep);
+      o_errorstack.error_number := utl_call_stack.error_number   (i_dep);
+      o_errorstack.error_msg    := utl_call_stack.error_msg      (i_dep);
+      
+      n_errorstack.extend;
+      n_errorstack(n_errorstack.last) := o_errorstack;
+      
+    end loop;
+    
+  end get_errorstack;
+
+
+  function calltype
+  return ero_types.st_identifier
+  is
+    v_result   ero_types.st_identifier;
+    v_first    pls_integer;
+    v_second   pls_integer;
+  begin   -- calltype
+    get_callstack;
+    
+    if  callstack_found
+    then
+      v_first  := n_callstack.first;
+      v_second := n_callstack.next(v_first);
+      
+      if v_second is not null
+      then
+        if  n_callstack(v_first).owner             = n_callstack(v_second).owner
+        and n_callstack(v_first).containing_object = n_callstack(v_second).containing_object
+        then
+          v_result := cn_calltype_internal;
+        else
+          v_result := cn_calltype_external;
+        end if;
+      end if;
+    end if;
+    
+    return (coalesce 
+              (v_result
+              ,cn_calltype_notcalled
+              )
+           );
+  end calltype;
+
+
+  function callstack
+  return nt_ero_callstack
+  is
+  begin   -- callstack
+    get_callstack;
+    return (n_callstack);
+  end callstack;
+
+
+  function errorstack
+  return nt_ero_errorstack
+  is
+  begin   -- errorstack
+    get_errorstack;
+    return (n_errorstack);
+  end errorstack;
+
+
+  function object_in_callstack
+  (p_objectname  in  varchar2  default null
+  ,p_objectowner in  varchar2  default null
+  ,p_objecttype  in  varchar2  default null
+  )
+  return boolean
+  is
+
+    v_dummy      integer;
+
+  begin   -- object_in_callstack
+    get_callstack;
+
+    select 1
+    into   v_dummy
+    from   table (n_callstack)  cst
+    where  upper(cst.containing_object) like upper(p_objectname )
+      and  upper(cst.owner            ) like upper(p_objectowner)
+    fetch first 1 row only
+    ;
+
+    return (true);
+  exception
+    when no_data_found
+    then
+      return (false);
+  end object_in_callstack;
+
+
+  function whoami
+  return ot_ero_callstack
+  is
+    v_result   ot_ero_callstack := ot_ero_callstack();
+  begin   -- whoami
+    v_result := stack_position (1);
+    return (v_result);
+  end whoami;
+
+
+  function called_by
+  return ot_ero_callstack
+  is
+    v_result   ot_ero_callstack := ot_ero_callstack();
+  begin   -- called_by
+    v_result := stack_position (2);
+    return (v_result);
+  end called_by;
+
+
+  function called_internally
+  return boolean
+  is
+  begin   -- called_internally
+    return (calltype = cn_calltype_internal);
+  end called_internally;
+
+
+  function called_externally
+  return boolean
+  is
+  begin   -- called_externally
+    return (calltype = cn_calltype_external);
+  end called_externally;
+
+
+  function called_code
+  return boolean
+  is
+  begin   -- called_code
+    return (calltype in (cn_calltype_internal
+                        ,cn_calltype_external
+                        )
+           );
+  end called_code;
+
+
+  function stack_position
+  (p_position  in  integer
+  )
+  return ot_ero_callstack
+  is
+    v_result   ot_ero_callstack := ot_ero_callstack();
+  begin   -- stack_position
+    get_callstack;
+    
+    if  n_callstack.exists(p_position)
+    then
+      v_result := n_callstack(p_position);
+    else
+      v_result := null;
+    end if;
+
+    return v_result;
+  end stack_position;
+
+
+end ero_callstack;
+/
+sho err

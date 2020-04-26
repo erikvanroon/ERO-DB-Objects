@@ -1,0 +1,58 @@
+prompt ===> ero_session
+create or replace package ero_session
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_session
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : session related functionality
+  -- *********************************************************************************
+
+  cn_package_name     constant   ero_types.st_identifier          := $$plsql_unit;
+  
+  -- Function returns the CURRENT data for a parameter IN THE CURRENT SESSION as it can be found in view nls_session_parameters
+  function nls_parameter
+  (pi_parameter_name     in  nls_session_parameters.parameter%type
+  )
+  return nls_session_parameters.value%type
+  ;
+
+
+  -- Procedure alters the setting of the specified parameter in the specified value FOR THE SESSION.
+  -- Parameter MUST exist and MUST BE session-modifiable
+  -- If pi_remember_original is set to true (default) the setting of the parameter before the change is
+  -- stored (in memory) so the session can return to its original state by calling reset_session_parameter
+  -- (see there)
+  procedure set_nls_parameter
+  (pi_parameter_name     in  nls_session_parameters.parameter%type
+  ,pi_setting            in  nls_session_parameters.value%type
+  ,pi_remember_original  in  boolean    default true
+  );
+
+
+  -- Procedure is used to alter the specified parameter back to its previous settings.
+  -- i.e. its settings before the parameter was last changed by a call to set_session_parameter with
+  -- pi_remember_original = true.
+  -- If such a call has not been issued for the parameter before, this procedure will do nothing.
+  -- After resetting the parameter, the stored previous settings to which it is returned are removed
+  -- from memory.
+  procedure reset_nls_parameter
+  (pi_parameter_name     in  nls_session_parameters.parameter%type
+  );
+
+
+end ero_session;
+/
+sho err

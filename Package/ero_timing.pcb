@@ -1,0 +1,366 @@
+prompt ===> ero_timing
+create or replace package body ero_timing
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_timing
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Measuring average, maximum, minimum and total runtime of parts of 
+  -- *               plsql code, and number of times these parts are executed
+  -- *********************************************************************************
+
+  cn_timingtype_start   constant st_timingtype             := 'START';
+  cn_timingtype_stop    constant st_timingtype             := 'STOP';
+  cn_header_timing      constant varchar2(100)             := 'Timing';
+  cn_header_exe         constant varchar2(100)             := 'Executions';
+  cn_header_min         constant varchar2(100)             := 'Min Seconds';
+  cn_header_max         constant varchar2(100)             := 'Max Seconds';
+  cn_header_tot         constant varchar2(100)             := 'Tot Seconds';
+  cn_header_avg         constant varchar2(100)             := 'Avg Seconds';
+  cn_width_numbers      constant integer                   := greatest (length(cn_header_exe)
+                                                                       ,length(cn_header_min)
+                                                                       ,length(cn_header_max)
+                                                                       ,length(cn_header_tot)
+                                                                       ,length(cn_header_avg)
+                                                                       );
+  cn_number_format      constant varchar2(100)             := ero_utl.repeat('9',cn_width_numbers-4)||'0.90';
+
+
+  type rt_summary is record (name      st_timingname
+                            ,execs     integer
+                            ,min_sec   number
+                            ,max_sec   number
+                            ,tot_sec   number
+                            ,avg_sec   number
+                            ,no_stop   integer
+                            ,no_start  integer
+                            );
+  type at_summary   is table of rt_summary index by pls_integer;
+
+  type rt_timingvalue is record (timingtype    st_timingtype
+                                ,seconds       number
+                                ,clocktime     date
+                                );
+  type at_timingvalues is table of rt_timingvalue  index by pls_integer;
+  type at_timings      is table of at_timingvalues index by st_timingname;
+  a_timings   at_timings;
+
+
+  v_width_timing       integer  := length(cn_header_timing);
+  v_timing_on          boolean  := true;
+
+
+  procedure print_line
+  is
+    v_linelength  integer;
+  begin   -- print_line
+    v_linelength := greatest (60
+                             ,(5 * cn_width_numbers) + v_width_timing + 5
+                             );
+
+    ero_pl.pl (ero_utl.repeat('#',v_linelength));
+  end print_line;
+
+
+  procedure log_timing
+  (p_name        in  st_timingname
+  ,p_timingtype  in  st_timingtype
+  )
+  is
+    a_timingvalues   at_timingvalues;
+    v_nxt   pls_integer;
+  begin   -- log_timing
+    if a_timings.exists(p_name)
+    then
+      a_timingvalues := a_timings(p_name);
+    end if;
+
+    v_nxt := coalesce(a_timingvalues.last,0) + 1;
+    a_timingvalues (v_nxt).timingtype  := p_timingtype             ;
+    a_timingvalues (v_nxt).seconds     := dbms_utility.get_time/100;  -- time in 1/100 of a second
+    a_timingvalues (v_nxt).clocktime   := sysdate                  ;
+
+    a_timings(p_name) := a_timingvalues;
+  end log_timing;
+
+
+  function make_summary
+  (p_name     in   st_timingname
+  ,p_values   in   at_timingvalues
+  )
+  return rt_summary
+  is
+    r_result   rt_summary;
+
+    v_idx      pls_integer;
+    v_diff     number;
+  begin   -- make_summary
+    -- initialiseer record
+    r_result.name     := p_name;
+    r_result.execs    := 0;
+    r_result.min_sec  := 0;
+    r_result.max_sec  := 0;
+    r_result.tot_sec  := 0;
+    r_result.avg_sec  := 0;
+    r_result.no_stop  := 0;
+    r_result.no_start := 0;
+
+    if p_values.count > 0
+    then
+      v_idx := p_values.first;
+      while v_idx is not null
+      loop
+        if p_values(v_idx).timingtype = cn_timingtype_stop
+        then
+          -- Timing starts with a stop-record.
+          -- That shouldn't happen, log a problem
+          r_result.no_start := r_result.no_start + 1;
+        elsif p_values(v_idx).timingtype = cn_timingtype_start
+        and   (not p_values.exists (v_idx + 1)
+               or  p_values(v_idx + 1).timingtype <> cn_timingtype_stop
+              )
+        then
+          -- Timing starts with a start-record, but isn't followed by a stop-record
+          -- That shouldn't happen, log a problem
+          r_result.no_stop := r_result.no_stop + 1;
+        else
+          -- start-record followed by stop-record found
+          -- process the measurement
+          v_diff := p_values(v_idx + 1).seconds - p_values(v_idx).seconds;
+          r_result.min_sec  := case r_result.execs
+                                 when 0 then v_diff
+                                 else        least (r_result.min_sec, v_diff)
+                               end;
+          r_result.max_sec  := greatest (r_result.max_sec, v_diff);
+          r_result.tot_sec  := r_result.tot_sec + v_diff;
+          r_result.execs    := r_result.execs + 1;
+          r_result.avg_sec  := r_result.tot_sec / r_result.execs;
+
+          -- advance the index 1 extra record because we have now processed 2 records
+          v_idx := v_idx + 1;
+        end if;
+
+        v_idx := p_values.next (v_idx);
+      end loop;
+    end if;
+    v_width_timing := greatest (v_width_timing,length(r_result.name));
+
+    return (r_result);
+  end make_summary;
+
+
+  procedure report_problem
+  (p_summary   in   at_summary
+  )
+  is
+    cn_indent   varchar2(100)  := ero_utl.repeat(' ',4);
+    v_found     boolean        := false;
+  begin   -- report_problem
+    if p_summary.count = 0
+    then
+      print_line;
+      ero_pl.pl ('PROBLEM, NO MEASUREMENTS');
+    else
+      for i_sum in p_summary.first .. p_summary.last
+      loop
+        if p_summary(i_sum).no_stop > 0
+        then
+          if not v_found
+          then
+            print_line;
+            ero_pl.pl ('PROBLEM, START TIMINGS WITHOUT END TIMINGS:');
+            v_found := true;
+          end if;
+          ero_pl.pl (cn_indent                                      ||
+                     rpad(p_summary(i_sum).name,v_width_timing,' ') ||
+                     ': '||to_char(p_summary(i_sum).no_stop)||' times'
+                    );
+        end if;
+      end loop;
+
+      v_found := false;
+      for i_sum in p_summary.first .. p_summary.last
+      loop
+        if p_summary(i_sum).no_start > 0
+        then
+          if not v_found
+          then
+            print_line;
+            ero_pl.pl ('PROBLEM, END TIMINGS WITHOUT START TIMINGS:');
+            v_found := true;
+          end if;
+          ero_pl.pl (cn_indent                                      ||
+                     rpad(p_summary(i_sum).name,v_width_timing,' ') ||
+                     ': '||to_char(p_summary(i_sum).no_start)||' times'
+                    );
+        end if;
+      end loop;
+    end if;
+  end report_problem;
+
+
+  procedure report_summary
+  (p_summary   in   at_summary
+  )
+  is
+  begin   -- report_summary
+    if p_summary.count > 0
+    then
+      print_line;
+      ero_pl.pl ('SUMMARY:');
+      ero_pl.pl ('');
+      ero_pl.pl (rpad(cn_header_timing,v_width_timing  ,' ') ||' '||
+                 rpad(cn_header_exe   ,cn_width_numbers,' ') ||' '||
+                 rpad(cn_header_min   ,cn_width_numbers,' ') ||' '||
+                 rpad(cn_header_max   ,cn_width_numbers,' ') ||' '||
+                 rpad(cn_header_tot   ,cn_width_numbers,' ') ||' '||
+                 rpad(cn_header_avg   ,cn_width_numbers,' ')
+                );
+      ero_pl.pl (ero_utl.repeat('=',v_width_timing  ) ||' '||
+                 ero_utl.repeat('=',cn_width_numbers) ||' '||
+                 ero_utl.repeat('=',cn_width_numbers) ||' '||
+                 ero_utl.repeat('=',cn_width_numbers) ||' '||
+                 ero_utl.repeat('=',cn_width_numbers) ||' '||
+                 ero_utl.repeat('=',cn_width_numbers)
+                );
+
+      for i_sum in p_summary.first .. p_summary.last
+      loop
+        ero_pl.pl (rpad(p_summary(i_sum).name                                   ,v_width_timing  ,' ') ||' '||
+                   lpad(trim(to_char(p_summary(i_sum).execs                   )),cn_width_numbers,' ') ||' '||
+                   lpad(trim(to_char(p_summary(i_sum).min_sec,cn_number_format)),cn_width_numbers,' ') ||' '||
+                   lpad(trim(to_char(p_summary(i_sum).max_sec,cn_number_format)),cn_width_numbers,' ') ||' '||
+                   lpad(trim(to_char(p_summary(i_sum).tot_sec,cn_number_format)),cn_width_numbers,' ') ||' '||
+                   lpad(trim(to_char(p_summary(i_sum).avg_sec,cn_number_format)),cn_width_numbers,' ')
+                  );
+      end loop;
+    end if;
+  end report_summary;
+
+
+  procedure set_timing_on
+  is
+  begin   -- set_timing_on
+    v_timing_on := true;
+  end set_timing_on;
+
+
+  procedure set_timing_off
+  is
+  begin   -- set_timing_off
+    v_timing_on := false;
+  end set_timing_off;
+
+
+  function timing_is_on
+  return boolean
+  is
+  begin   -- timing_is_on
+    return (v_timing_on);
+  end timing_is_on;
+
+
+  procedure start_timing
+  (p_name    in   st_timingname default cn_default_timingname
+  )
+  is
+  begin   -- start_timing
+    if timing_is_on
+    then
+      -- Only record the moment. Pospone ALL other calculations and actions until the results
+      -- are processed. This will slow down the reporting a bit, but minimizes the extra overhead 
+      -- of doing the measurement, minimizing its influence on the timing itself
+      log_timing (p_name       => upper(p_name)
+                 ,p_timingtype => cn_timingtype_start
+                 );
+    end if;
+  end start_timing;
+
+
+  procedure stop_timing
+  (p_name    in   st_timingname default cn_default_timingname
+  )
+  is
+  begin   -- stop_timing
+    if timing_is_on
+    then
+      -- Only record the moment. Pospone ALL other calculations and actions until the results
+      -- are processed. This will slow down the reporting a bit, but minimizes the extra overhead 
+      -- of doing the measurement, minimizing its influence on the timing itself
+      log_timing (p_name       => upper(p_name)
+                 ,p_timingtype => cn_timingtype_stop
+                 );
+    end if;
+  end stop_timing;
+
+
+  procedure clear_timings
+  (p_name    in   st_timingname default null
+  )
+  is
+  begin   -- clear_timings
+    if timing_is_on
+    then
+      if p_name is null
+      then
+        a_timings.delete;
+      else
+        a_timings.delete (p_name);
+      end if;
+    end if;
+  end clear_timings;
+
+
+  procedure summary
+  (p_name    in   st_timingname default null
+  ,p_clear   in   boolean       default true
+  )
+  is
+    a_summary   at_summary;
+
+    v_name      st_timingname;
+    v_idx_tmg   st_timingname;
+  begin   -- summary
+    if timing_is_on
+    then
+      v_name    := upper(p_name);
+      v_idx_tmg := a_timings.first;
+      while v_idx_tmg is not null
+      loop
+        -- go through all measurements
+        if v_name   is null
+        or v_idx_tmg = v_name
+        then
+          -- The measurement is for a timing the caller is interested in
+          a_summary(coalesce(a_summary.last,0)+1) := make_summary (v_idx_tmg
+                                                                  ,a_timings(v_idx_tmg)
+                                                                  );
+        end if;
+        v_idx_tmg := a_timings.next(v_idx_tmg);
+      end loop;
+
+      if p_clear
+      then
+        clear_timings (v_name);
+      end if;
+
+      report_problem (a_summary);
+      report_summary (a_summary);
+      print_line;
+    end if;
+  end summary;
+
+end ero_timing;
+/
+sho err

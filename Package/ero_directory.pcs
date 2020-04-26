@@ -1,0 +1,108 @@
+prompt ===> ero_directory
+create or replace package ero_directory
+authid current_user
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_directory
+  -- * Version     : 01.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Directory related functionality
+  -- *********************************************************************************
+
+  cn_package_name        constant   ero_types.st_identifier       := $$plsql_unit;
+
+  cn_endslash_wanted     constant   boolean                       := true;
+  cn_endslash_unwanted   constant   boolean                       := false;
+
+
+  -- Functions contents_type* return the allowed values for contents-type parameter of function dir_object_contents
+  function contents_type_files
+  return ero_types.st_dir_contents_type
+  ;
+
+  function contents_type_directories
+  return ero_types.st_dir_contents_type
+  ;
+
+  function contents_type_all
+  return ero_types.st_dir_contents_type
+  ;
+
+
+  -- Functions *_indicator return the strings that are used in the output of 
+  function file_indicator
+  return ero_types.st_dirlist_type_indicator
+  result_cache
+  ;
+  
+  function dir_indicator
+  return ero_types.st_dirlist_type_indicator
+  result_cache
+  ;
+
+
+  -- Function returns the physical directory of an Oracle Directory Object
+  -- If the Directory Object can not be found, it is assumed a physical directory was
+  -- provided in the parameter, so it will be returned unchanged
+  function physical_directory
+  (p_directory   in  ero_types.st_dir_object_name
+  )
+  return ero_types.st_physical_path
+  result_cache
+  ;
+
+
+  -- Function indicates if the supplied directory is a valid Oracle Directory Object
+  function is_oracle_directory_object
+  (p_directory   in  ero_types.st_maxchar
+  )
+  return boolean
+  ;
+
+
+  -- Depending on the value of parameter p_wanted, this function either places a directory delimiter if missing
+  -- or removes a directory delimiter if present from the end of a pathname.
+  -- The directory delimiter for the current OS is defined in constant gc_dirdelimiter.
+  -- If p_wanted is NULL p_pathname is returned unchanged
+  -- If p_wanted is NOT NULL all directory delimiters that may be at the end of pathname, and all trailing-
+  -- and leading spaces will be removed, and then, if p_wanted=TRUE, a directory delimiter is placed at the end.
+  -- Examples:
+  --   trailing_dirdelimiter ('/temp' ,ero_directory.cn_endslash_wanted  );               =>  '/temp/'
+  --   trailing_dirdelimiter ('/temp/',ero_directory.cn_endslash_wanted  );               =>  '/temp/'
+  --   trailing_dirdelimiter ('/temp' ,ero_directory.cn_endslash_unwanted);               =>  '/temp'
+  --   trailing_dirdelimiter ('/temp/',ero_directory.cn_endslash_unwanted);               =>  '/temp'
+  --   trailing_dirdelimiter ('/temp///  //   // /',ero_directory.cn_endslash_wanted);    =>  '/temp/'
+  --   trailing_dirdelimiter ('/temp///  //   // /',ero_directory.cn_endslash_unwanted);  =>  '/temp'
+  --   trailing_dirdelimiter ('/temp///  //   // /',NULL                              );  =>  '/temp///  //   // /'
+  function trailing_dirdelimiter
+  (p_pathname  in  ero_types.st_physical_path
+  ,p_wanted    in  boolean
+  )
+  return  ero_types.st_physical_path
+  ;
+
+
+  -- Function returns a collection containing the contents of an Oracle Directory Object
+  -- The calling schema must have appropriate privileges on the requested directory object
+  function dir_contents
+  (p_directory        in  ero_types.st_dir_object_name
+  ,p_contents_type    in  ero_types.st_dir_contents_type   default  contents_type_all
+  )
+  return nt_ero_dir_contents
+  ;
+
+
+end ero_directory;
+/
+sho err

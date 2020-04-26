@@ -1,0 +1,93 @@
+prompt ===> ero_pl
+create or replace package ero_pl
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_pl
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : wrapper for dbms_output.put_line
+  -- *********************************************************************************
+
+  cn_package_name     constant  ero_types.st_identifier       := $$plsql_unit;
+
+  cn_max_linelength   constant  integer                       := 32767;
+
+
+  -- Check if clob is empty.
+  -- If a clob contained data, but by stripping it using substr now it's empty,
+  -- then the clob, contrary to a varchar2, is *not null*.
+  -- So emptyness must be checked using "length()=0" rather than "is null"
+  function clob_empty
+  (p_clob  in  clob
+  )
+  return boolean
+  ;
+
+
+  -- Set the linelength for all subsequent calls to PL.
+  -- Linelength can also be set as a parameter of procedure pl, which takes precedence over
+  -- this one. But for multiple calls to procedure pl with the same desired linelength it's
+  -- easier to execute set_linelength once and execute pl without linelength parameter.
+  -- If linelength is not set by either set_linelength or the parameter of pl the value of
+  -- cn_max_linelength is used.
+  -- To reset a previously set linelength execute set_linlength with null as input parameter
+  -- (=default, so "set_linelength;" will do the trick)
+  procedure set_linelength
+  (p_linelength  in  integer   default null
+  );
+
+
+  -- Function will return the value to which linelength is set by executing set_linelength
+  function linelength
+  return integer
+  ;
+
+
+  -- Procedure will determine the first line of the text in the p_text parameter and return
+  -- it through the out-parameter p_line. The line is stripped of of the p_text parameter.
+  -- The 'first line' is defined as the part of the text starting at the first character and
+  -- continuing either until the first linebreak (chr(10)) or until the end of the line according
+  -- to the linesize (see comments for procedure pl).
+  -- If p_wordwrap is true an attempt is made to make sure a linebreak due to linesize does not
+  -- break up words, but happens at the last space before the last word that doesn't fit on the line
+  -- If p_lineprefix is not null, wrapped lines will be prefixed with this value.
+  procedure wrap_text
+  (p_text            in out  clob
+  ,p_line               out  varchar2
+  ,p_linelength      in      integer   default null
+  ,p_lineprefix      in      varchar2  default null
+  ,p_wordwrap        in      boolean   default true
+  );
+
+
+  -- Procedure pl takes care of showing text by utilizing dbms_output.
+  -- If text contains CHR(10) characters, the text will be devided in separate lines accordingly
+  -- If a line is larger than p_linelength, it will be split into multiple lines at p_linelength
+  -- If the text is wrapped to new lines, all lines except the first one will be prefixed with
+  -- the string in p_lineprefix (if set).
+  -- p_linelength is not allowed to be larger than ero_pl.cn_max_linelength
+  -- The linelength being used is:
+  -- 1. The one provided in parameter p_lineprefix. If *not* provided:
+  -- 2. The one previously set by a executing procedure set_linelength. If *not* executed:
+  -- 3. Value of ero_pl.cn_max_linelength
+  procedure pl
+  (p_text        in  clob      default null
+  ,p_linelength  in  integer   default cn_max_linelength
+  ,p_lineprefix  in  varchar2  default null
+  );
+
+end ero_pl;
+/
+sho err

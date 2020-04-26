@@ -1,0 +1,404 @@
+prompt ===> ero_periods
+create or replace package body ero_periods
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- *********************************************************************************
+  -- * Name module : ero_periods
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : 'grafic' display of a timeline of a set of periods
+  -- *********************************************************************************
+
+  cn_dateformat       constant  ero_types.st_date_as_char := ero_const.cn_datetime_sortable_short_fmt;
+  cn_dateprintformat  constant  ero_types.st_date_as_char := ero_const.cn_datetime_fmt               ;
+  cn_section_chr      constant  ero_types.st_singlechar   := ero_const.cn_minus                      ;
+  cn_section_fill     constant  ero_types.st_singlechar   := ero_const.cn_space                      ;
+  cn_section_length   constant  integer                   := 3                                       ;
+
+
+  type rt_timeline    is record (line      ero_types.st_maxchar
+                                ,lastdate  date
+                                );
+  type at_timeline    is table of rt_timeline  index by pls_integer;
+
+  type at_err_msg     is table of varchar2(200)  index by pls_integer;
+  a_err_msg             at_err_msg;
+
+  type rt_period is record (startdate  date
+                           ,enddate    date
+                           );
+
+  type at_period_list is table of rt_period  index by pls_integer;
+  a_period_list         at_period_list;
+  a_period_list_copy    at_period_list;
+
+  type at_date_pos    is table of integer index by ero_types.st_date_as_char;
+  a_date_pos            at_date_pos;
+
+
+  v_debugmode                   boolean         := false                  ;
+
+
+  procedure rae
+  (p_err   in  pls_integer
+  ,p1      in  varchar2     default null
+  ,p2      in  varchar2     default null
+  ,p3      in  varchar2     default null
+  ,p4      in  varchar2     default null
+  ,p5      in  varchar2     default null
+  ,p6      in  varchar2     default null
+  ,p7      in  varchar2     default null
+  ,p8      in  varchar2     default null
+  ,p9      in  varchar2     default null
+  )
+  is
+    v_code  pls_integer;
+    v_msg   varchar2(200);
+  begin   -- rae
+    if p_err is null
+    or not a_err_msg.exists (p_err)
+    then
+      v_code := -20001;
+      v_msg  := 'Unknown errorcode: '||coalesce(to_char(p_err),ero_const.cn_nullstring);
+    else
+      v_code := p_err;
+      v_msg  := a_err_msg (p_err);
+
+      v_msg  := replace (v_msg,'<p1>',p1);
+      v_msg  := replace (v_msg,'<p2>',p2);
+      v_msg  := replace (v_msg,'<p3>',p3);
+      v_msg  := replace (v_msg,'<p4>',p4);
+      v_msg  := replace (v_msg,'<p5>',p5);
+      v_msg  := replace (v_msg,'<p6>',p6);
+      v_msg  := replace (v_msg,'<p7>',p7);
+      v_msg  := replace (v_msg,'<p8>',p8);
+      v_msg  := replace (v_msg,'<p9>',p9);
+    end if;
+
+    ero_utl.rae (v_msg
+                ,v_code
+                );
+  end rae;
+
+
+  procedure init_err_msg
+  is
+  begin   -- init_err_msg
+    a_err_msg (-20114) := 'No periodes defined by calling add_period';
+    a_err_msg (-20115) := 'Incomplete period: startdate = <p1> enddate = <p2>';
+    a_err_msg (-20116) := 'No dates found in supplied periods';
+    a_err_msg (-20117) := 'Unable to construct timeline';
+  end init_err_msg;
+
+
+  function date2char
+  (p_date   in  date
+  )
+  return varchar2
+  is
+  begin   -- date2char
+    return (to_char(p_date,cn_dateformat));
+  end date2char;
+
+
+  procedure expand_timeline
+  (p_line      in out  varchar2
+  ,p_char      in      varchar2
+  ,p_until     in      integer
+  )
+  is
+    v_expansion  ero_types.st_maxchar;
+    v_linelength integer;
+  begin   -- expand_timeline
+    v_linelength := coalesce(length(p_line),0);
+
+    -- Only fill with p_char if there's anything to fill
+    v_expansion := lpad(p_char
+                       ,p_until - v_linelength - 1
+                       ,p_char
+                       );
+
+    -- If p_until is equal to the length of p_line so far, ten the dash for this date has already been
+    -- placed, and no action is needed
+    if p_until <> v_linelength
+    then
+      v_expansion := v_expansion||'|';
+    end if;
+
+    p_line := p_line || v_expansion;
+  end expand_timeline;
+
+
+  procedure debug_put_line
+  (p_line  in  varchar2
+  )
+  is
+  begin   -- debug_put_line
+    if v_debugmode
+    then
+      ero_pl.pl (p_line);
+    end if;
+  end debug_put_line;
+
+
+  procedure debug_put
+  (p_line  in  varchar2
+  )
+  is
+  begin   -- debug_put
+    if v_debugmode
+    then
+      dbms_output.put (p_line);
+    end if;
+  end debug_put;
+
+
+  procedure determine_date_positions
+  is
+    v_idx_date    ero_types.st_date_as_char;
+    v_seqno       integer         := 0;
+    v_position    integer;
+  begin   -- determine_date_positions
+    v_idx_date := a_date_pos.first;
+    while v_idx_date is not null
+    loop
+      -- calculate position of date on timeline
+      v_seqno                 := v_seqno + 1;
+      v_position              := ((v_seqno - 1) * (cn_section_length + 1)) + 1;
+      a_date_pos(v_idx_date)  := v_position;
+
+      debug_put_line (v_idx_date||' => '||to_char(v_position));
+
+      v_idx_date := a_date_pos.next(v_idx_date);
+    end loop;
+  end determine_date_positions;
+
+
+  procedure set_debugmode
+  (p_debug_on  in  boolean  default true
+  )
+  is
+  begin   -- set_debugmode
+    v_debugmode := coalesce(p_debug_on,true);
+  end set_debugmode;
+
+
+  procedure add_period
+  (p_startdate   in  date
+  ,p_enddate     in  date
+  )
+  is
+    v_inserted    boolean     := false;
+
+    r_period      rt_period;
+  begin   -- add_period
+    if p_startdate is null
+    or p_enddate   is null
+    then
+      rae (-20115
+          ,coalesce(to_char(p_startdate,cn_dateprintformat),ero_const.cn_nullstring)
+          ,coalesce(to_char(p_enddate  ,cn_dateprintformat),ero_const.cn_nullstring)
+          );
+    end if;
+
+    -- if startdate > enddate then swap dates
+    r_period.startdate := least    (p_startdate,p_enddate);
+    r_period.enddate   := greatest (p_startdate,p_enddate);
+
+    -- initialize a record for dateposition
+    a_date_pos (date2char(r_period.startdate)) := 0;
+    a_date_pos (date2char(r_period.enddate  )) := 0;
+
+    a_period_list.delete;
+    if a_period_list_copy.count = 0
+    then
+      a_period_list(1) := r_period;
+    else
+      for i_idx in a_period_list_copy.first .. a_period_list_copy.last
+      loop
+        if  not v_inserted
+        and (   r_period.startdate < a_period_list_copy(i_idx).startdate
+             or (    r_period.startdate = a_period_list_copy(i_idx).startdate
+                 and r_period.enddate   < a_period_list_copy(i_idx).enddate
+                )
+            )
+        then
+          a_period_list(coalesce(a_period_list.last,0)+1) := r_period;
+          v_inserted := true;
+        end if;
+        a_period_list(coalesce(a_period_list.last,0)+1) := a_period_list_copy(i_idx);
+      end loop;
+
+      if not v_inserted
+      then
+        -- record has not been inserted inbetween existing records, so it must be appended
+        a_period_list(coalesce(a_period_list.last,0)+1) := r_period;
+      end if;
+    end if;
+
+    a_period_list_copy := a_period_list;
+    debug_put_line ('Result add_line: '||
+                    to_char(p_startdate,cn_dateprintformat)  ||' / '||
+                    to_char(p_enddate,cn_dateprintformat)  ||', '||
+                    'in list='||to_char(a_period_list.count)     ||', '||
+                    'in copylist='||to_char(a_period_list_copy.count)
+                   );
+  end add_period;
+
+
+  procedure clear_period_list
+  is
+  begin   -- clear_period_list
+    a_period_list.delete     ;
+    a_period_list_copy.delete;
+    a_date_pos.delete        ;
+  end clear_period_list;
+
+
+  procedure list_periods
+  is
+  begin   -- list_periods
+    ero_pl.pl ('List of periodes:');
+    ero_pl.pl ('================');
+    if a_period_list.count = 0
+    then
+      ero_pl.pl ('NO PERIODES SUPPLIED YET');
+      ero_pl.pl;
+    else
+      for i_per in a_period_list.first .. a_period_list.last
+      loop
+        ero_pl.pl (to_char(a_period_list(i_per).startdate,cn_dateprintformat)||' t/m '||
+                   to_char(a_period_list(i_per).enddate  ,cn_dateprintformat)
+                  );
+      end loop;
+    end if;
+  exception
+    when others
+    then
+      clear_period_list;
+  end list_periods;
+
+
+  procedure period_graph
+  is
+    a_timeline  at_timeline;
+
+    v_matched     boolean;
+  begin   -- period_graph
+    if a_period_list.count = 0
+    then
+      rae (-20114);
+    end if;
+
+    if a_date_pos.count = 0
+    then
+      rae (-20116);
+    end if;
+
+    -- Determine the position of every date on the timeline
+    determine_date_positions;
+
+    debug_put_line ('Number of periodes to display: '||to_char(a_period_list.count));
+    <<loop_period_list>>
+    for i_per in a_period_list.first .. a_period_list.last
+    loop
+      debug_put (to_char(a_period_list(i_per).startdate,ero_const.cn_date_fmt)||' - '||
+                 to_char(a_period_list(i_per).enddate  ,ero_const.cn_date_fmt)||' => '
+                );
+
+      v_matched := false;
+
+      -- periods of a single day on a separate line because otherwise they could become 
+      -- invisible if they coincide with the start or end of another period
+      if a_period_list(i_per).startdate = a_period_list(i_per).enddate
+      then
+        if not a_timeline.exists(0)
+        then
+          a_timeline(0).line := null;
+        end if;
+        expand_timeline (a_timeline(0).line
+                        ,cn_section_fill
+                        ,a_date_pos(date2char(a_period_list(i_per).startdate))
+                        );
+        a_timeline(0).lastdate := a_period_list(i_per).enddate;
+        v_matched := true;
+        debug_put_line ('addded to line 0');
+      end if;
+
+      -- If the period hasn't been matched yet, it is not a period of a single day
+      -- Then, look for the first timeline after line 0 to which the period connects at the end
+      if  not v_matched
+      and a_timeline.exists(1)
+      then
+        for i_lne in 1 .. a_timeline.last
+        loop
+          if  not v_matched
+          and a_timeline(i_lne).lastdate <= a_period_list(i_per).startdate
+          then
+            expand_timeline (a_timeline(i_lne).line
+                            ,cn_section_fill
+                            ,a_date_pos(date2char(a_period_list(i_per).startdate))
+                            );
+            expand_timeline (a_timeline(i_lne).line
+                            ,cn_section_chr
+                            ,a_date_pos(date2char(a_period_list(i_per).enddate))
+                            );
+            a_timeline(i_lne).lastdate := a_period_list(i_per).enddate;
+            v_matched := true;
+            debug_put_line ('added to line '||to_char(i_lne));
+          end if;
+        end loop;
+      end if;
+
+      -- If the period still hasn't been matched, it is for more than one day and there is no timeline yet
+      -- to which it connects
+      -- In that case create a new timelinevoor the period
+      if not v_matched
+      then
+        a_timeline(coalesce(a_timeline.last,0)+1).line := null;
+
+        expand_timeline (a_timeline(a_timeline.last).line
+                        ,cn_section_fill
+                        ,a_date_pos(date2char(a_period_list(i_per).startdate))
+                        );
+        expand_timeline (a_timeline(a_timeline.last).line
+                        ,cn_section_chr
+                        ,a_date_pos(date2char(a_period_list(i_per).enddate))
+                        );
+        a_timeline(a_timeline.last).lastdate := a_period_list(i_per).enddate;
+        debug_put_line ('new line '||to_char(a_timeline.last));
+      end if;
+
+    end loop;  -- loop_period_list
+
+    if a_timeline.count = 0
+    then
+      rae (-20117);
+    else
+      for i_lne in a_timeline.first .. a_timeline.last
+      loop
+        ero_pl.pl (a_timeline(i_lne).line);
+      end loop;
+    end if;
+    clear_period_list;
+  exception
+    when others
+    then
+      clear_period_list;
+  end period_graph;
+
+begin
+  init_err_msg;
+end ero_periods;
+/
+sho err

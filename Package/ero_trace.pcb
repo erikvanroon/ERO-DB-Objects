@@ -1,0 +1,188 @@
+prompt ===> ero_trace
+create or replace package body ero_trace
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_trace
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : tracing of current session
+  -- *********************************************************************************
+
+  cn_trace_on             constant   ero_types.st_shortstring  := 'on';
+  cn_trace_off            constant   ero_types.st_shortstring  := 'off';
+  cn_tracefile_identifier constant   ero_types.st_shortstring  := 'ERO_TRACE';
+
+
+  v_trace_on        boolean               := false;
+  v_trace_path      ero_types.st_maxchar;
+  v_trace_name      ero_types.st_maxchar;
+  v_trace_pathname  ero_types.st_maxchar;
+
+
+  procedure retrieve_tracefile_name
+  is
+  begin   -- retrieve_tracefile_name
+    with diag_info
+    as   (select di.value       tracefile_pathname
+          ,      case
+                   when instr(di.value,'\') > 0 then instr(di.value,'\',-1)
+                   when instr(di.value,'/') > 0 then instr(di.value,'/',-1)
+                   else                              length(di.value)
+                 end        dir_delim_location
+          from   v$diag_info    di
+          where  di.name = 'Default Trace File'
+         )
+    select substr(tracefile_pathname,1,dir_delim_location - 1)   "tracelocation"
+    ,      substr(tracefile_pathname,dir_delim_location + 1)     "tracefile"
+    ,      tracefile_pathname
+    into   v_trace_path
+    ,      v_trace_name
+    ,      v_trace_pathname
+    from   diag_info
+    ;
+  end;
+
+
+  function trace_is_on
+  return boolean
+  is
+  begin   -- trace_is_on
+    return v_trace_on;
+  end trace_is_on;
+
+
+  function trace_path
+  return ero_types.st_maxchar
+  is
+  begin   -- trace_path
+    retrieve_tracefile_name;
+    return (v_trace_path);
+  end trace_path;
+
+
+  function trace_name
+  return ero_types.st_maxchar
+  is
+  begin   -- trace_name
+    retrieve_tracefile_name;
+    return (v_trace_name);
+  end trace_name;
+
+
+  function trace_pathname
+  return ero_types.st_maxchar
+  is
+  begin   -- trace_pathname
+    retrieve_tracefile_name;
+    return (v_trace_pathname);
+  end trace_pathname;
+
+
+  procedure set_trace
+  (p_setting  in  ero_types.st_shortstring
+  )
+  is
+    cn_trace_action_on    constant  ero_types.st_shortstring  := 'activated';
+    cn_trace_action_off   constant  ero_types.st_shortstring  := 'terminated';
+
+    v_stmnt      clob;
+  begin   -- set_trace
+    if (    p_setting = cn_trace_on
+        and trace_is_on
+       )
+    or (    p_setting = cn_trace_off
+        and not trace_is_on
+       )
+    then
+      ero_utl.rae ('Tracing has already been turned '||p_setting||' for this session');
+    end if;
+
+    retrieve_tracefile_name;
+
+    if    p_setting = cn_trace_on
+    then
+      v_stmnt := 'alter session set tracefile_identifier = '||ero_utl.quoted(cn_tracefile_identifier);
+      execute immediate v_stmnt;
+      
+      v_stmnt := 'alter session set timed_statistics=true';
+      execute immediate v_stmnt;
+      
+      v_stmnt := 'alter session set sql_trace true';
+      execute immediate v_stmnt;
+
+    elsif p_setting = cn_trace_off
+    then
+      v_stmnt := 'alter session set sql_trace false';
+      execute immediate v_stmnt;
+      
+    end if;
+
+    v_trace_on := (p_setting = cn_trace_on);
+
+    ero_pl.pl (rpad('#',70,'#'));
+    ero_pl.pl ('Tracing '||
+               case p_setting
+                 when cn_trace_on  then cn_trace_action_on
+                 when cn_trace_off then cn_trace_action_off
+                 else                   '???'
+               end ||
+               ' for this session'
+              );
+    ero_pl.pl ('Tracefile location: '||v_trace_path);
+    ero_pl.pl ('Tracefile name    : '||v_trace_name);
+    ero_pl.pl (rpad('#',70,'#'));
+
+  end set_trace;
+
+
+  procedure trace_on
+  is
+  begin   -- trace_on
+    set_trace (cn_trace_on);
+  end trace_on;
+
+
+  procedure trace_off
+  is
+  begin   -- trace_off
+    set_trace (cn_trace_off);
+  end trace_off;
+
+
+  procedure trace_off
+  (p_trace_path  out  ero_types.st_maxchar
+  ,p_trace_name  out  ero_types.st_maxchar
+  )
+  is
+  begin   -- trace_off
+    trace_off;
+
+    p_trace_path  := v_trace_path;
+    p_trace_name  := v_trace_name;
+  end trace_off;
+
+
+  procedure trace_off
+  (p_trace_pathname   out  ero_types.st_maxchar
+  )
+  is
+  begin   -- trace_off
+    trace_off;
+
+    p_trace_pathname  := v_trace_pathname;
+  end trace_off;
+
+end ero_trace;
+/
+sho err

@@ -1,0 +1,261 @@
+prompt ===> ero_kalender
+create or replace package ero_kalender
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- *********************************************************************************
+  -- * Name module : ero_kalender
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Diverse kalender-gerelateerde utilities, waaronder het bepalen
+  --                 of een datum een feest/vrije dag is en het bepalen van
+  -- *               de data waarop diverse bijzondere dagen in een bepaald jaar vallen.
+  -- *********************************************************************************
+
+  cn_package_name     constant   ero_types.st_identifier          := $$plsql_unit;
+  
+  cn_last             constant   integer                          := 0;
+
+
+  type rt_weekdag is record (is_werkdag       boolean
+                            ,referentiedatum  date
+                            );
+
+  type at_err_msg  is table of varchar2(200)  index by pls_integer;
+  a_err_msg     at_err_msg;
+
+  type at_werkweek is table of rt_weekdag     index by varchar2(20);
+  a_werkweek    at_werkweek;
+
+  type rt_period is record (van  date
+                           ,tot  date
+                           );
+
+  -- Function year_start geeft de datum van de eerste dag (01 jan) van het opgegeven jaar terug.
+  -- Als geen jaar opgegeven wordt wordt de datum van de eerste dag van het huidige jaar geretourneerd
+  function year_start
+  (p_year  in  integer   default extract(year from sysdate)
+  )
+  return date
+  ;
+
+
+  -- Function month_start is overloaded.
+  -- In de ene versie geeft het de datum van de eerste dag van de maand van de opgegeven datum terug
+  -- In de andere versie de datum van de eerste dag van de opgegeven maand in het opgegeven jaar.
+  -- Voor zowel peildatum, jaar als maand geldt dat als deze niet opgegeven wordt, deze uit sysdate wordt betrokken
+  function month_start
+  (p_peildatum  in  date  default sysdate
+  )
+  return date
+  ;
+
+
+  function month_start
+  (p_month  in  integer  default extract(month from sysdate)
+  ,p_year   in  integer  default extract(year  from sysdate)
+  )
+  return date
+  ;
+
+
+  -- Procedure get_weeknr retourneert in out-parameters volgens het in nederland
+  -- gebruikelijke weeknummeringssysteem (ISO) het nummer van de week en het jaartal waarin
+  -- de opgegeven datum valt.
+  procedure get_weeknr
+  (p_wanted_date  in      date
+  ,p_year            out  number
+  ,p_week            out  number
+  );
+
+
+  -- Function get_weeknr doet in wezen precies hetzelfde als procedure get_weeknr,
+  -- sterker het maakt gebruik van die procedure, echter het retourneert een varchar
+  -- in het formaat YYYY-WW, oftewel week 15 in jaar 1999 levert op '1999-15'
+  function get_weeknr
+  (p_wanted_date  in date
+  )
+  return  varchar2
+  ;
+
+
+  -- Procedure split_days krijgt een tijdsduur in dagen binnen als het verschil tussen 2 data
+  -- (einddatum - begindatum) en retourneert deze tijdsduur als een aantal dagen,
+  -- uren, minuten en seconden. Al deze aantallen zijn gehele getalen
+  procedure split_days
+  (p_duur      in      number
+  ,p_days         out  integer
+  ,p_hours        out  integer
+  ,p_minutes      out  integer
+  ,p_seconds      out  number
+  );
+
+
+  --  Function get_dayofweek levert de datum van de ingegeven dag in de
+  --  ingegeven week.
+  --  Week is volgens de nederlandse weeknummering
+  --  Dag  is volgens de constanten in ero_const (cn_d_ of cn_day_ constanten)
+  function get_dayofweek
+  (p_jaar    in  number
+  ,p_weeknr  in  number
+  ,p_day     in  varchar2
+  )
+  return date
+  ;
+
+
+  -- procedure set_werkdag legt voor de huidige sessie vast in de globale variabelen van deze package
+  -- of een bepaalde dag van de week wel of geen werkdag is. Dit is van belang voor o.a. de is_werkdag
+  -- functionaliteit.
+  -- De procedure wordt gebruikt om het standaard gedrag (maandag t/m vrijdag werkdag, zaterdag/zondag niet)
+  -- aan te passen, indien een kortere/langere/verschoven werkweek gewenst is.
+  -- Parameter p_dag verwacht 1 waarde uit 1 van de ero_const waardereeksen d_maandag - d_zondag en
+  -- day_maandag - day_zondag
+  -- Middels parameter p_referentiedatum kan aangegeven worden of het een alternerende werkdag betreft.
+  -- Een alternerende werkdag is wekelijks om-en-om een werkdag en een vrije dag.
+  -- Door in p_referentiedatum de datum in te vullen van een voorbeelddag waarvoor de instelling in
+  -- p_is_werkdag geldt (true:werkdag, false:vrije dag) kan de programmatuur uitgaande van die datum voor
+  -- elke week bepalen of de weekdag in die week een vrije- dan wel een werkdag is.
+  procedure set_werkdag
+  (p_dag              in   varchar2
+  ,p_is_werkdag       in   boolean
+  ,p_referentiedatum  in   date      default null
+  );
+
+
+  -- functie is_feestdag geeft aan of de ingegeven datum een
+  -- feestdag is.
+  function is_feestdag
+  (p_datum  in  date
+  )
+  return boolean
+  ;
+
+
+  -- functie is_werkdag geeft aan of de ingegeven datum een
+  -- werkdag of vrije dag (= feestdag of weekenddag) is.
+  function is_werkdag
+  (p_datum  in  date
+  )
+  return boolean
+  ;
+
+
+  -- funtie get_werkdag zoekt naar de p_werkdag'ste werkdag ten opzichte van
+  -- de opgegeven peildatum.
+  -- Vanaf de peildatum wordt in de p_zoekrichting gezocht tot de p_werkdag'ste
+  -- werkdag is gevonden. Indien p_werkdag 1 is, en de peildatum is een werkdag
+  -- wordt dus de peildatum teruggegeven, ongeacht de waarde van p_zoekrichting.
+  function get_werkdag
+  (p_peildatum     in  date
+  ,p_zoekrichting  in  varchar2
+  ,p_werkdag       in  integer    default 1
+  )
+  return date
+  ;
+
+
+  -- functie feestdagdatum geeft de datum terug waarop een bepaalde
+  -- feestdag in een bepaald jaar valt
+  function feestdagdatum
+  (p_feestdag  in  integer
+  ,p_jaar      in  integer
+  )
+  return date
+  ;
+
+
+  -- procedure bijzondere_dagen geeft een overzicht op scherm (middels
+  -- dbms_output) van de bijzondere dagen in een opgegeven jaar
+  procedure bijzondere_dagen
+  (p_jaar_van  in  integer
+  ,p_jaar_tm   in  integer  default null
+  );
+
+
+  -- procedure feestdagen_ical geeft op scherm een output die, gespoold naar een *.ics bestand,
+  -- geimporteerd kan worden in outlook.
+  -- De output bestaat uit de feestdagen voor een opgegeven jaar of range van jaren
+  procedure feestdagen_ical
+  (p_jaar_van  in  integer
+  ,p_jaar_tm   in  integer  default null
+  );
+
+
+  -- procedure urenreminder_ical geeft op scherm een output die, gespoold naar een *.ics bestand,
+  -- geimporteerd kan worden in outlook.
+  -- De output bestaat uit reminders om de urenverantwoording in te vullen.
+  -- Parameters:
+  --   p_periode       : aangeven of reminders voor de week- (ero_const.cn_period_week) dan wel maandstaten (ero_const.cn_period_month)
+  --                     gegenereerd moeten worden.
+  --   p_periode_grens : aangeven wanneer de reminder ingepland moet worden:
+  --                     ero_const.cn_period_start  = aan het begin van de maand/week
+  --                     ero_const.cn_period_end    = op het eind van de maand/week
+  --                     ero_const.cn_period_both   = aan het begin en eind van de maand/week
+  --   p_werkdag_nr    : De reminder wordt gegenereerd voor de werkdag die hier opgegeven wordt,
+  --                     geteld vanaf de eerste (periode grens = start/beide) of laatste (als periode grens = eind/beide)
+  --                     werkdag van de periode.
+  --                     Als deze parameter 1 is betekent dat dus de eerste dan wel laatste werkdag van de periode
+  --                     Als deze parameter 2 is betekent dat dus de tweede dan wel voorlaatste werkdag van de periode
+  --                     enz.
+  --   p_van           : Startdatum van een periode waarbinnen de reminders gegenereerd moeten worden
+  --   p_tm            : Einddatum van een periode waarbinnen de reminders gegenereerd moeten worden
+  --   p_msg           : de omschrijving van de reminder in outlook
+  --   p_alarm         : Indien een alarm gewenst is kan hier aangegeven worden hoeveel minuten voorafgaand
+  --                     aan het begin van de reminder (00:00 uur op de betreffende datum) het alarm gewenst is.
+  --                     0 betekent op het moment zelf, NULL betekent GEEN alarm
+  procedure urenreminder_ical
+  (p_periode          in  varchar2                                      -- ero_const.cn_period_month of ero_const.cn_period_week
+  ,p_periode_grens    in  varchar2  default ero_const.cn_period_both    -- ero_const.cn_period_start, ero_const.cn_period_end of ero_const.cn_period_both
+  ,p_werkdag_nr       in  integer   default 1                           -- werkdag nummer waarop de melding moet komen, geteld vanaf het begin/eind van de periode
+  ,p_van              in  date      default trunc(sysdate)
+  ,p_tm               in  date      default add_months(trunc(sysdate),12)
+  ,p_msg              in  varchar2  default 'Urenverantwoording niet vergeten'
+  ,p_alarm            in  integer   default 0
+  );
+
+
+  -- Function get_day_occurance geeft de datum terug van bijvoorbeeld de 3e dinsdag in september 2009
+  -- Ook kan bijvoorbeeld de laatste woensdag van november 2010 bepaald worden door voor p_occurence de
+  -- waarde ero_kalender.cn_last te gebruiken.
+  -- Voorbeelden:
+  --  -> 'Prinsjesdag 2009 = '||ero_kalender.get_day_occurance(3,ero_const.cn_day_tuesday,9,2009)
+  --     resulteert in: 'Prinsjesdag 2009 = 15-09-2009'
+  --  -> 'Laatste woensdag van maart 1963 = '||ero_kalender.get_day_occurance(ero_kalender.cn_last,ero_const.cn_day_wednesday,3,1963)
+  --     resulteert in: 'Laatste woensdag van maart 1963 = 27-03-1963'
+  function get_day_occurance
+  (p_occurence  in  integer
+  ,p_day        in  varchar2
+  ,p_month      in  integer
+  ,p_year       in  integer
+  )
+  return date
+  ;
+
+
+  -- Functie retourneert een string die het verschil tussen de opgegeven begin en eind datumtijd
+  -- bevat als uren:minuten:seconden.
+  -- Beide parameters hebben een default van SYSDATE
+  function timedif
+  (p_datumtijd_1 in date default sysdate
+  ,p_datumtijd_2 in date default sysdate
+  )
+  return ero_types.st_format
+  ;
+
+
+  procedure reinitialise_package;
+
+end ero_kalender;
+/
+sho err

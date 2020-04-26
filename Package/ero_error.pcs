@@ -1,0 +1,32 @@
+create or replace package ero_error
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_error
+  -- * Version     : 01.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Show error information
+  -- *********************************************************************************
+
+  gc_package_name     constant   ero_types.st_identifier   := $$plsql_unit;
+
+  -- procedure shows (using dbms_output) the error stack and error backtrace
+  procedure show_error
+    (pi_codeblock  in   ero_types.st_identifier   default null
+    );
+
+
+end ero_error;
+/
+sho err

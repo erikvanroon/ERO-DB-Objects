@@ -1,0 +1,385 @@
+prompt ===> ero_utl
+create or replace package ero_utl
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_utl
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Miscellaneous utilities
+  -- *********************************************************************************
+
+  cn_package_name       constant  ero_types.st_identifier  := $$plsql_unit;
+  
+
+  -- Procedure to raise a user-exception
+  procedure rae
+  (p_msg   in  varchar2
+  ,p_code  in  integer   default -20000
+  );
+  
+  
+  -- Return the string enclosed by quotes. 
+  -- If there are quotes that are part of the strings data, they are escaped (each individual quote replaced by 2 single quotes)
+  function quoted
+  (p_string_to_be_quoted  in  ero_types.st_maxchar
+  )
+  return ero_types.st_maxchar
+  ;
+
+
+  -- num2dut converts a number into a varchar2 using the dutch group- (.) and decimalseparators (,)
+  -- Optionaly, a format can be specified.
+  -- Optionaly, a maximum number of decimals can be specified. If this is not specified, a default maximum
+  -- of 10 decimals is used
+  function num2dut
+  (p_number  in  number
+  ,p_format  in  varchar2  default null
+  ,p_maxdec  in  integer   default 10
+  )
+  return varchar2
+  ;
+
+
+  -- swap_separators swaps the group- and decimalseparators of a varchar2 that contains a number.
+  -- So, every dot becomes a comma and every comma becomes a dot.
+  -- e.g. 1,234,567,890.234  becomes 1.234.567.890,234
+  --      1.234.567.890,234  becomes 1,234,567,890.234
+  function swap_separators
+  (p_number  in  varchar2
+  )
+  return varchar2;
+
+
+  -- is_number returns False if the specified string is not numeric (can not be converted into a NUMBER).
+  -- If the string is numeric, True will be returned.
+  function is_number
+  (p_varchar  in  varchar2
+  )
+  return boolean;
+
+
+  -- procedure inc increases the specified value by the specified amount
+  -- Through overloading this works for numbers, dates and numerical varchar2
+  procedure inc
+  (p_num2inc  in out  number
+  ,p_amount   in      number   default 1
+  );
+
+  procedure inc
+  (p_dat2inc  in out  date
+  ,p_amount   in      number   default 1
+  );
+
+  procedure inc
+  (p_chr2inc  in out  varchar2
+  ,p_amount   in      number   default 1
+  );
+
+
+  -- procedure dec decreases the specified value by the specified amount
+  -- Through overloading this works for numbers, dates and numerical varchar2
+  procedure dec
+  (p_num2dec  in out  number
+  ,p_amount   in      number    default 1
+  );
+
+  procedure dec
+  (p_dat2dec  in out  date
+  ,p_amount   in      number    default 1
+  );
+
+  procedure dec
+  (p_chr2dec  in out  varchar2
+  ,p_amount   in      number    default 1
+  );
+
+
+  -- function div returns the number of times the denominator 'fits' in the numerator.
+  -- e.g.: div(10,3) = 3
+  --       div(4,2)  = 2
+  --       div(7,4)  = 1
+  --       div(3,5)  = 0
+  function div
+  (p_numerator    in  number
+  ,p_denominator  in  number
+  )
+  return number;
+
+
+  -- function decm returns the decimal part of the specified number
+  function decm
+  (p_number  in  number
+  )
+  return number
+  ;
+
+
+  -- function center returns the specified string centered on a line of specified width by adding the
+  -- specified character to the left and right.
+  -- If no character is specified, a space is used
+  -- If no width is specified or the width is less than 0 the string is returned unchanged
+  -- If a correct width  but no string is specified, a string that consists of all spaces to the specified 
+  -- widt will be returned.
+  -- If the specified width is less than the length of the string, the center of the string will be returned.
+  function center
+  (p_string  in  varchar2
+  ,p_width   in  number
+  ,p_char    in  varchar2   default ' '
+  )
+  return varchar2;
+
+
+  -- Function levelindent is used for 'connect by' queries to make a value indent proportionally to
+  -- the level of the value
+  function levelindent
+  (p_value     in  varchar2
+  ,p_level     in  number
+  )
+  return varchar2;
+
+
+  -- Function repeat returns a line of length=p_length, consisting of all p_char characters.
+  -- p_char may consist of more than 1 character, bur then if p_length is not a multiple of the length of
+  -- p_char the end of the line will not be a complete p_char.
+  -- If length is null or <= 0 the function returns null
+  -- Examples:
+  --    repeat('X'  , 5  )  -> 'XXXXX'
+  --    repeat('XYZ', 9  )  -> 'XYZXYZXYZ'
+  --    repeat('XYZ', 8  )  -> 'XYZXYZXY'
+  --    repeat('X'  , 0  )  -> NULL
+  --    repeat('X'  ,-4  )  -> NULL
+  --    repeat('X'  ,NULL)  -> NULL
+  function repeat
+  (p_char    in   varchar2
+  ,p_length  in   integer
+  )
+  return varchar2;
+
+
+  -- Function Substr_Until_Char returns a substring until the specified character in a string
+  -- So, of p_string the part starting with the first character until the p_seq'st occurence of p_char
+  -- -> If p_including then including the character, otherwise excluding
+  -- -> If p_string is null, then result is null
+  -- -> If p_char   is null, then result is null
+  -- -> If p_seq    is null or 0, dan p_seq defaults to 1
+  -- -> If p_including is null, then p_including defaults to false
+  -- -> If p_char occurs less than p_seq times, then result is null
+  -- -> If p_seq < 0, then the pseq'st occurence of character, counting from end to start of the string
+  -- -> If p_including=false and the character being searched for is the first character, then obviously result is null
+  -- Example
+  --      Substr_Until_Char ('logfile.txt', '.')
+  -- Returns:
+  --      'logfile'
+  function Substr_Until_Char
+  (p_string     in  varchar2
+  ,p_char       in  varchar2
+  ,p_seq        in  integer  default 1
+  ,p_including  in  boolean  default false
+  )
+  return varchar2;
+
+
+  -- Function Substr_From_Char returns a substring from the specified character until the end of a string
+  -- So, of p_string the part starting with the p_seq'st occurence of p_char until the last character
+  -- -> If p_including then including the character, otherwise excluding
+  -- -> If p_string is null, then result is null
+  -- -> If p_char   is null, then result is null
+  -- -> If p_seq    is null or 0, dan p_seq defaults to 1
+  -- -> If p_including is null, then p_including defaults to false
+  -- -> If p_char occurs less than p_seq times, then result is null
+  -- -> If p_seq < 0, then the pseq'st occurence of character, counting from end to start of the string
+  -- -> If p_including=false and the character being searched for is the last character, then obviously result is null
+  -- Example
+  --      Substr_From_Char ('logfile.txt', '.')
+  -- Returns:
+  --      'txt'
+  function Substr_From_Char
+  (p_string     in  varchar2
+  ,p_char       in  varchar2
+  ,p_seq        in  integer  default 1
+  ,p_including  in  boolean  default false
+  )
+  return varchar2;
+
+
+  -- Procedure chk_query_validity checks if the string in a varchar2 is a valid query.
+  -- The procedure can be used to syntactically check dynamic queries before executing them.
+  -- If the query is syntactically correct TRUE will be returned in out-parameter p_valid, and
+  -- out-parameter p_message will be 'Query is valid'
+  -- If syntactically there is something wrong with the query FALSE will be returned in out-parameter p_valid, 
+  -- and out-parameter p_message will contain the SQLERRM that occured
+  -- BEWARE: The query is *only* checked for syntactical errors
+  -- Function errors like for example performing a to_number on a varchar2 column that also contains non-numerical
+  -- values will be considered a valid query by this procedure, but will still produce ORA-errors at runtime.
+  -- Examples:
+  --   - chk_query_validity ('select * from dual',v_valid,v_message);
+  --     Result:
+  --       v_valid   = TRUE
+  --       v_message = 'Query is valid'
+  --   - chk_query_validity ('select WHATEVER from dual',v_valid,v_message);
+  --     Result:
+  --       v_valid   = FALSE
+  --       v_message = 'ORA-06550: line 4, column 8:PL/SQL: ORA-00904: "WHATEVER": invalid identifier ORA-06550: line 4, column 1: PL/SQL: SQL Statement ignored'
+  --   - chk_query_validity (NULL,v_valid,v_message);
+  --     Result:
+  --       v_valid   = FALSE
+  --       v_message = 'ORA-20803: No query specified'
+  procedure chk_query_validity
+  (p_query    in      varchar2
+  ,p_valid       out  boolean
+  ,p_message     out  varchar2
+  );
+
+
+  -- Function pending_transaction returns a boolean indicating if there is any DML that has not yet been 
+  -- committed or rollbacked. If there are TRUE ir returned, if there are not FALSE is returned
+  function pending_transaction
+  return boolean
+  ;
+
+
+  -- Function list_as_array converts a character-separated list in a CLOB to a nested table of varchar2 values
+  -- where each element from the list is turned into a record in the nested table
+  function list_as_array
+  (p_delimited_list     in  clob
+  ,p_delimiter          in  varchar2   default  ero_const.cn_semicolon
+  )
+  return nt_ero_maxchar
+  ;
+
+
+  -- Functions distribution_num, distribution_chr and distribution_dat each return a nested table with records that
+  -- represent a distribution of the records of the specified table in the specified number of processes.
+
+  -- Parameters:
+  -- - p_table           : The table of which the records need to be distributed in subprocesses
+  --                       Apart from a real table or a view a string representing a vaild query can also be used.
+  -- - p_key_colomn      : The (unique) column on which the key_start and key_end of the distribution will be based.
+  --                       If the key column is of a numeric datatype, function distribution_num should be used,
+  --                       if it's voor alfanumeric distribution_chr should be used, and if it's date distribution_dat
+  --                       should be used.
+  -- - p_process_count   : The number of processes in which the records should be distributed
+  -- - p_min_rec_count   : Optional.
+  --                       If the number of records to be ditributed is so small that this will result in processes
+  --                       with less than this amount of records, the number of processes (p_process_count) is decreased
+  --                       so that each process will have at least this amount of records.
+  --                       (Unless of course the total number of records is less than this amount)
+  --                       If this parameter is NULL it will be ignored (distribution will take place without taking a
+  --                       minimum number of records into account).
+  -- - p_where_clause    : Optional.
+  --                       Using this parameter the records that should be taken into account can be limited.
+  --                       The where clause may start with the keyword 'WHERE', but it may also be omitted.
+
+  -- Example:
+  -- If a nested table variable is declared as:
+  --        n_num    nt_ero_distribution_num  := nt_ero_distribution_num();
+  -- Then a function call like this can be done:
+  --       n_num := distribution_num (p_table            => 'ero_log'                           -- IN
+  --                                 ,p_key_colomn       => 'id'                                -- IN
+  --                                 ,p_process_count    => 5                                   -- IN
+  --                                 ,p_where_clause     => 'id >= 100'||chr(10)||
+  --                                                        'and message like ''%something%'''  -- IN
+  --                                 );
+  -- This would result in a collection containing (for example)
+  --        process_nr  key_start             key_end               rec_count
+  --        ==========  ====================  ====================  ==========
+  --                 1                   100                  2477        2378
+  --                 2                  2478                  4855        2378
+  --                 3                  4856                  7232        2377
+  --                 4                  7233                  9609        2377
+  --                 5                  9610                 15345        2377
+  -- Here, 'rec_count' represents the number of records in the table that pass the where-criteria and that 
+  -- will be picked up by the process with number proces_nr (So the number of records between key_start and 
+  -- key_end that pass the where-criteria )
+  --
+  function distribution_num
+  (p_table            in  varchar2
+  ,p_key_colomn       in  varchar2
+  ,p_process_count    in  integer
+  ,p_min_rec_count    in  integer    default null
+  ,p_where_clause     in  varchar2   default null
+  )
+  return nt_ero_distribution_num
+  ;
+
+
+  function distribution_chr
+  (p_table            in  varchar2
+  ,p_key_colomn       in  varchar2
+  ,p_process_count    in  integer
+  ,p_min_rec_count    in  integer    default null
+  ,p_where_clause     in  varchar2   default null
+  )
+  return nt_ero_distribution_chr
+  ;
+
+
+  function distribution_dat
+  (p_table            in  varchar2
+  ,p_key_colomn       in  varchar2
+  ,p_process_count    in  integer
+  ,p_min_rec_count    in  integer    default null
+  ,p_where_clause     in  varchar2   default null
+  )
+  return nt_ero_distribution_dat
+  ;
+
+
+  -- Procedure move_column moves a column of a table to a different place in the column sequence.
+  -- Example:
+  -- Given the output of a 'describe' of a table my_table like:
+  --     Name         Null?    Type
+  --     ------------ -------- ----------------------------
+  --     COLUMN_1     NOT NULL VARCHAR2(30)
+  --     COLUMN_2     NOT NULL VARCHAR2(30)
+  --     COLUMN_3     NOT NULL VARCHAR2(30)
+  --     COLUMN_4              VARCHAR2(30)
+  --     COLUMN_5              VARCHAR2(30)
+  --
+  -- Then after executing:
+  --     move_column (p_table_name   => 'my_table'
+  --                 ,p_column_name  => 'column_5'
+  --                 ,p_new_position => 3
+  --                 );             
+  -- 
+  -- The 'describe' will then show:
+  --     Name         Null?    Type
+  --     ------------ -------- ----------------------------
+  --     COLUMN_1     NOT NULL VARCHAR2(30)
+  --     COLUMN_2     NOT NULL VARCHAR2(30)
+  --     COLUMN_5              VARCHAR2(30)
+  --     COLUMN_3     NOT NULL VARCHAR2(30)
+  --     COLUMN_4              VARCHAR2(30)
+  --
+  procedure move_column
+  (p_table_name     in  all_tab_columns.table_name%type
+  ,p_column_name    in  all_tab_columns.column_name%type
+  ,p_new_position   in  all_tab_columns.column_id%type
+  );
+
+
+  -- Procedure displays a list of capabilities of a materialized view, 
+  -- based on its definition script.
+  -- The procedure is provided with the create statement of the materialized view
+  -- as a varchar2 (without the ;), and puts the capabilities to schreen using
+  -- dbms_output.
+  -- The capabilities that the MView has or does not have are listed separately
+  procedure mv_capabilities
+  (p_mv_stmnt  in  varchar2
+  );
+
+end ero_utl;
+/
+sho err

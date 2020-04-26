@@ -1,0 +1,95 @@
+prompt ===> ero_session
+create or replace package body ero_session
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_session
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : session related functionality
+  -- *********************************************************************************
+
+
+  type at_parameter is table of nls_session_parameters.value%type index by nls_session_parameters.parameter%type;
+  a_parameter    at_parameter;
+
+
+  function nls_parameter
+  (pi_parameter_name     in  nls_session_parameters.parameter%type
+  )
+  return nls_session_parameters.value%type
+  is
+    v_result   nls_session_parameters.value%type;
+  begin   -- nls_parameter
+    select prm.value
+    into   v_result
+    from   nls_session_parameters   prm
+    where  prm.parameter = upper (pi_parameter_name)
+    ;
+
+    return (v_result);
+  exception
+    when no_data_found
+    then
+      ero_utl.rae ('No parameter with name "'||pi_parameter_name||'" can be found in view nls_session_parameters');
+  end nls_parameter;
+
+
+  procedure set_nls_parameter
+  (pi_parameter_name     in  nls_session_parameters.parameter%type
+  ,pi_setting            in  nls_session_parameters.value%type
+  ,pi_remember_original  in  boolean    default true
+  )
+  is
+
+    v_param_value  nls_session_parameters.value%type;
+    v_stmnt        ero_types.st_maxchar;
+
+  begin   -- set_nls_parameter
+    v_param_value := nls_parameter (pi_parameter_name);
+
+    if pi_remember_original
+    then
+      a_parameter (lower(pi_parameter_name)) := v_param_value;
+    end if;
+
+    -- NOTE:
+    -- Although this procedure issues an ALTER command, no autonomous transaction is needed
+    -- because "ALTER SESSION" does not invoke a commit.
+    v_stmnt := 'alter session set '||pi_parameter_name||'='||ero_const.cn_quote||pi_setting||ero_const.cn_quote;
+    execute immediate v_stmnt;
+
+  end set_nls_parameter;
+
+
+  procedure reset_nls_parameter
+  (pi_parameter_name     in  nls_session_parameters.parameter%type
+  )
+  is
+  begin   -- reset_nls_parameter
+    if a_parameter.exists (lower(pi_parameter_name))
+    then
+      set_nls_parameter
+        (pi_parameter_name    => pi_parameter_name
+        ,pi_setting           => a_parameter(lower(pi_parameter_name))
+        ,pi_remember_original => false
+        );
+
+      a_parameter.delete (lower(pi_parameter_name));
+    end if;
+  end reset_nls_parameter;
+
+
+end ero_session;
+/
+sho err

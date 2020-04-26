@@ -1,0 +1,217 @@
+prompt ===> ero_pl
+create or replace package body ero_pl
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_pl
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : wrapper for dbms_output.put_line
+  -- *********************************************************************************
+
+  v_default_linelength   integer;
+
+
+  function clob_empty
+  (p_clob  in  clob
+  )
+  return boolean
+  is
+    v_result  boolean;
+  begin  -- clob_empty
+    v_result := (coalesce (length (p_clob) , 0) = 0);
+
+    return (v_result);
+  end clob_empty;
+
+
+  procedure set_linelength
+  (p_linelength  in  integer   default null
+  )
+  is
+  begin   -- set_linelength
+    v_default_linelength := p_linelength;
+  end set_linelength;
+
+
+  function linelength
+  return integer
+  is
+  begin   -- linelength
+    return (v_default_linelength);
+  end linelength;
+
+
+  function current_linelength
+  (p_override  in  integer
+  )
+  return integer
+  is
+  begin   -- current_linelength
+    return (coalesce (p_override
+                     ,v_default_linelength
+                     ,cn_max_linelength
+                     )
+           );
+  end current_linelength;
+
+
+  procedure wrap_text
+  (p_text            in out  clob
+  ,p_line               out  varchar2
+  ,p_linelength      in      integer   default null
+  ,p_lineprefix      in      varchar2  default null
+  ,p_wordwrap        in      boolean   default true
+  )
+  is
+    v_text               clob;
+    v_linelength         integer;
+    v_line               ero_types.st_maxchar;
+    v_eol_pos            integer;
+    v_space_pos          integer;
+    v_length_first_part  integer;
+    v_start_remainder    integer;
+  begin   -- wrap_text
+    v_text        := p_text;
+    v_linelength  := current_linelength (p_linelength);
+
+    if v_text is null
+    then
+      -- No text to wrap, return null
+      v_text        := null;
+      v_line        := null;
+
+    else
+      case
+        when v_linelength < coalesce(length(p_lineprefix),0) + 1
+        then
+          -- linelength must be at least big enough to contain a possible line-prefix (if wanted) plus 1 character
+          ero_utl.rae ('Error in call to wrap_text: linelength must be >= length(lineprefix) + 1 ('||to_char(coalesce(length(p_lineprefix),0) + 1)||')');
+
+        when v_linelength > cn_max_linelength
+        then
+          ero_utl.rae ('Error in call to wrap_text: linelength must be <= maximum linelength ('||to_char(cn_max_linelength)||')');
+
+        else
+          -- linelength is ok
+          null;
+      end case;
+
+      -- process the text
+      v_eol_pos := instr(v_text
+                        ,ero_const.cn_eol
+                        );
+
+      if v_eol_pos between 1
+                   and     v_linelength
+      then
+        -- Found end-of-line before linelength is reached, so wrap at that point
+        v_length_first_part := v_eol_pos - 1;
+        v_start_remainder   := v_eol_pos + 1;
+
+      elsif length(v_text) <= v_linelength
+      then
+          -- The message is shorter than maximum messagelength and contains no (more) end-of-lines
+          -- So no (more) wrapping to be done
+          v_length_first_part := length(v_text);
+          v_start_remainder   := length(v_text) + 1;
+
+      else
+          -- Message is longer than maximum messagelength, but contains no end-of-line before maximum messagelength
+          -- So message must be wrapped at maximum messagelength.
+        if not p_wordwrap
+        then
+          v_length_first_part := length(v_text);
+          v_start_remainder   := length(v_text) + 1;
+
+        else
+          -- We will try not to break in the middle of a word. So try to wrap at the last blank before the last word
+          -- that does not fit in maximum messagelength completely.
+          -- This last blank is the last blank within (maximum messagelength + 1)!!!
+          -- The '+1' is used because the last word that does completely fit within the maximum messagelength
+          -- could possibly end at exactly maximum messagelength. In that case the blank we are searching for is
+          -- at position (maximum messagelength + 1)
+          v_space_pos   := instr(substr(v_text,1,v_linelength + 1)
+                                ,' '
+                                ,-1      -- back to front
+                                ,1       -- first hit
+                                );
+
+          if  (    coalesce(p_lineprefix,chr(0)) <> substr(v_text,1,length(p_lineprefix))
+               and v_space_pos                    > 0
+              )
+          or  (    coalesce(p_lineprefix,chr(0))  = substr(v_text,1,length(p_lineprefix))
+               and v_space_pos                    > length(p_lineprefix)
+              )
+          then
+            -- A space has been found before at linelength and, in case of a wrapped line, this space is not
+            -- part of the prefix
+            -- So wrap text at that space
+            v_length_first_part := v_space_pos  - 1;
+            v_start_remainder   := v_space_pos  + 1;
+
+          else
+            -- No space found that enables us to wrap at a complete word.
+            -- So wrap at linelength
+            v_length_first_part := v_linelength     ;
+            v_start_remainder   := v_linelength  + 1;
+
+          end if;
+        end if;
+      end if;
+
+      v_line        := substr(v_text,1,v_length_first_part);
+      v_text        := substr(v_text,v_start_remainder);
+
+      if not clob_empty (v_text)
+      then
+        v_text        := p_lineprefix||v_text       ;
+      end if;
+    end if;
+
+    p_text        := v_text       ;
+    p_line        := v_line       ;
+  end wrap_text;
+
+
+  procedure pl
+  (p_text        in  clob      default null
+  ,p_linelength  in  integer   default cn_max_linelength
+  ,p_lineprefix  in  varchar2  default null
+  )
+  is
+    v_text    clob;
+    v_line    ero_types.st_maxchar;
+
+  begin   -- pl
+    v_text := p_text;
+
+    -- Execute loop at least once, so if p_text is null, the empty line that is requested will be printed
+    loop
+      wrap_text
+        (p_text        => v_text         -- in out
+        ,p_line        => v_line         --    out
+        ,p_linelength  => p_linelength   -- in
+        ,p_lineprefix  => p_lineprefix   -- in
+        );
+
+      dbms_output.put_line (rtrim(v_line));
+      
+      exit when clob_empty (v_text);
+    end loop;
+
+  end pl;
+
+end ero_pl;
+/
+sho err

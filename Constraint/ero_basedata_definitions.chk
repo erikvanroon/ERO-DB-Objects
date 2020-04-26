@@ -1,0 +1,62 @@
+prompt ===> ero_basedata_definitions
+prompt check constraint ero_bdt_chk001
+alter table ero_basedata_definitions
+add (constraint ero_bdt_chk001
+     check (-- datatype may only be C, N or D
+            datatype IN ('C'  -- char/varchar2
+                        ,'N'  -- number
+                        ,'D'  -- date
+                       )
+           )
+    );
+
+prompt check constraint ero_bdt_chk002
+alter table ero_basedata_definitions
+add (constraint ero_bdt_chk002
+     check (-- If datatype is Date, datalength and dataprecision must be empty
+            datatype          <> 'D'   -- date
+            or
+            (    datatype       = 'D'   -- date
+             and datalength    is null
+             and dataprecision is null
+            )
+           )
+    );
+
+prompt check constraint ero_bdt_chk003
+alter table ero_basedata_definitions
+add (constraint ero_bdt_chk003
+     check (-- If datatype is (var)char, datalength must contain a value
+            -- and dataprecision and fmt must be empty
+            datatype          <> 'C'   -- char/varchar2
+            or
+            (    datatype       = 'C'   -- char/varchar2
+             and datalength    is not null
+             and dataprecision is null
+             and fmt           is null
+            )
+           )
+    );
+
+prompt check constraint ero_bdt_chk004
+alter table ero_basedata_definitions
+add (constraint ero_bdt_chk004
+     check (-- If datalength contains a value, it must be more than 0
+            coalesce(datalength,1) > 0
+           )
+    );
+
+prompt check constraint ero_bdt_chk005
+alter table ero_basedata_definitions
+add (constraint ero_bdt_chk005
+     check (-- If dataprecision contains a value, datalength must contain a value too
+            -- and dataprecision must be between 0 and datalength
+            dataprecision    is null
+            or
+            (    dataprecision is not null
+             and datalength    is not null
+             and dataprecision between 0
+                               and     datalength
+            )
+           )
+    );

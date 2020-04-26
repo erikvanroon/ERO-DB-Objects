@@ -1,0 +1,76 @@
+create or replace package body ero_error
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_error
+  -- * Version     : 01.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Show error information
+  -- *********************************************************************************
+
+  procedure show_error
+    (pi_codeblock  in   ero_types.st_identifier   default null
+    )
+    is
+
+      c_anonymous_block    constant ero_types.st_identifier   := '__anonymous_block';
+      c_codeblock_unknown  constant ero_types.st_identifier   := '[unknown]';
+
+      l_message   ero_types.st_maxchar;
+
+    begin   -- show_error
+
+      ero_pl.pl (rpad ('#',50,'#'));
+
+      ero_pl.pl ('Error in codeblock: '||pi_codeblock);
+      ero_pl.pl ('Errorstack:');
+
+      for l_error_depth in 1 .. utl_call_stack.error_depth
+      loop
+        l_message := lpad(to_char(utl_call_stack.error_number(l_error_depth)), 5, 0)
+                     ||': '||
+                     -- Last character of error message is line feed.
+                     substr(utl_call_stack.error_msg(l_error_depth)
+                           ,1
+                           ,length(utl_call_stack.error_msg(l_error_depth)) - 1
+                           )
+                     ;
+
+        ero_pl.pl (l_message);
+
+      end loop;
+
+      ero_pl.pl;
+      ero_pl.pl ('Error Backtrace:');
+
+      for l_backtrace_depth in 1..utl_call_stack.backtrace_depth
+      loop
+        l_message := coalesce (utl_call_stack.backtrace_unit(l_backtrace_depth)
+                              ,c_anonymous_block
+                              )
+                     ||' line ' ||
+                     utl_call_stack.backtrace_line(l_backtrace_depth)
+                     ;
+
+        ero_pl.pl (l_message);
+
+      end loop;
+
+      ero_pl.pl (rpad ('#',50,'#'));
+
+  end show_error;
+
+
+end ero_error;
+/
+sho err

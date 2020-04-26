@@ -1,0 +1,262 @@
+prompt ===> ero_basedata
+create or replace package body ero_basedata
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- *********************************************************************************
+  -- * Name module : ero_basedata
+  -- * Version     : Erik van Roon
+  -- * Author      : 02.00
+  -- * Function    : Functionality for retrieving basedata from basedata_definitions table
+  -- *********************************************************************************
+
+
+  function basedata_record
+  (p_name      in  ero_basedata_definitions.name%type
+  ,p_datatype  in  ero_basedata_definitions.datatype%type  default '%'
+  )
+  return ero_basedata_definitions%rowtype
+  result_cache
+  is
+    cursor c_bdt (cp_name     ero_basedata_definitions.name%type
+                 ,cp_datatype ero_basedata_definitions.datatype%type
+                 )
+    is
+    select name
+    ,      datatype
+    ,      datalength
+    ,      dataprecision
+    ,      fmt
+    ,      basevalue
+    ,      description
+    from   ero_basedata_definitions
+    where  name      = upper(cp_name)
+      and  datatype  like cp_datatype
+    ;
+
+    r_bdt   c_bdt%rowtype;
+
+    v_found   boolean;
+    r_result  ero_basedata_definitions%rowtype;
+  begin   -- basedata_record
+    open  c_bdt (p_name
+                ,p_datatype
+                );
+    fetch c_bdt
+    into  r_bdt;
+    v_found  := c_bdt%found;
+    close c_bdt;
+
+    if not v_found
+    then
+      ero_utl.rae ('No BaseData with name '||p_name||
+                   ' found with '||case p_datatype
+                                     when 'C' then 'Character'
+                                     when 'N' then 'Numeric'
+                                     when 'D' then 'Date'
+                                     when '%' then 'Any'
+                                     else          p_datatype
+                                   end||
+                   ' datatype'
+                  );
+      r_result := null;
+    end if;
+
+    r_result.name          := r_bdt.name         ;
+    r_result.datatype      := r_bdt.datatype     ;
+    r_result.datalength    := r_bdt.datalength   ;
+    r_result.dataprecision := r_bdt.dataprecision;
+    r_result.fmt           := r_bdt.fmt          ;
+    r_result.basevalue     := r_bdt.basevalue    ;
+    r_result.description   := r_bdt.description  ;
+
+    return (r_result);
+
+  end basedata_record;
+
+
+  procedure check_datatype
+  (p_bdt_row       in  ero_basedata_definitions%rowtype
+  )
+  is
+    v_dec_pos     integer;
+    v_dummy_num   number;
+    v_dummy_date  date;
+    v_format_type ero_types.st_shortstring;
+  begin   -- check_datatype
+    -- Check if basevalue complies with datatype only if there actually is a basevalue
+    if p_bdt_row.basevalue is not null
+    then
+      case p_bdt_row.datatype
+        when cn_char
+        then
+          -- a (var)char only needs to comply to the datatlength
+          -- constraints enforce that for (var)char datalength is not null
+          if length(p_bdt_row.basevalue) > p_bdt_row.datalength
+          then
+            ero_utl.rae ('Value for character-basedata '||p_bdt_row.name||' is too long ('||to_char(length(p_bdt_row.basevalue))||' characters)');
+          end if;
+        
+        when cn_num
+        then
+          -- basevalue has to be numeric
+          if not ero_utl.is_number (p_bdt_row.basevalue)
+          then
+            ero_utl.rae ('Value for numeric-basedata '||p_bdt_row.name||' is not numeric');
+          end if;
+
+          -- The number should be no longer than the defined datalength
+          -- If a dataprecision is defined, it must be subtracted from the datalength because
+          -- a declaration like (NUMBER(10,3) means: a number of 10 digits OF WHICH 3 decimals
+          if p_bdt_row.datalength is not null
+          then
+            if p_bdt_row.basevalue >= power(10,p_bdt_row.datalength - coalesce(p_bdt_row.dataprecision,0))
+            then
+              ero_utl.rae ('Value for numeric-basedata '||p_bdt_row.name||' is too large a number to fit in defined datalength/dataprecision');
+            end if;
+          end if;
+
+          -- The number may not contain more decimals than the defined dataprecision allows
+          if  p_bdt_row.dataprecision is not null
+          and ero_utl.decm(to_char(p_bdt_row.basevalue)) > 0  -- contains decimals
+          then
+            v_dec_pos := greatest (instr(p_bdt_row.basevalue,ero_const.cn_dot ,-1,1)
+                                  ,instr(p_bdt_row.basevalue,ero_const.cn_comma,-1,1)
+                                  );
+            if length(p_bdt_row.basevalue - (v_dec_pos + 1)) > p_bdt_row.dataprecision
+            then
+              ero_utl.rae ('Value for numeric-basedata '||p_bdt_row.name||' contains more decimals than defined dataprecision allows');
+            end if;
+
+          end if;
+
+          -- The number must fit in the defined format (if any)
+          if p_bdt_row.fmt is null
+          then
+            begin
+              v_dummy_num := to_number(p_bdt_row.basevalue, p_bdt_row.fmt);
+            exception
+              when others
+              then
+                ero_utl.rae ('Value for numeric-basedata '||p_bdt_row.name||' does not comply with defined format');
+            end;
+          end if;
+
+        when cn_date
+        then
+          -- check if thevalue is a valid date according to defined format (if any) or default format if no format is defined
+          begin
+            if p_bdt_row.fmt is null
+            then
+              v_format_type := 'database-default';
+              v_dummy_date  := to_date(p_bdt_row.basevalue);
+            else
+              v_format_type := 'specified';
+              v_dummy_date := to_date(p_bdt_row.basevalue, p_bdt_row.fmt);
+            end if;
+          exception
+            when others
+            then
+              ero_utl.rae ('Value for date-basedata '||p_bdt_row.name||' is not a valid date according to the '||v_format_type||' format');
+          end;
+        else
+          ero_utl.rae ('Invalid datatype ('||p_bdt_row.datatype||') specified for basedata '||p_bdt_row.name);
+      end case;
+    end if;
+  end check_datatype;
+
+
+  function value_any
+  (p_name  in  ero_basedata_definitions.name%type
+  )
+  return ero_basedata_definitions.basevalue%type
+  is
+    r_bdt   ero_basedata_definitions%rowtype;
+  begin   -- value_any
+    r_bdt  := basedata_record (p_name);
+
+    return (r_bdt.basevalue);
+
+  end value_any;
+
+
+  function value_num
+  (p_name  in  ero_basedata_definitions.name%type
+  )
+  return number
+  is
+    r_bdt     ero_basedata_definitions%rowtype;
+    v_result  number;
+  begin   -- value_num
+    r_bdt := basedata_record (p_name
+                             ,ero_const.cn_datatype_n
+                             );
+
+    if r_bdt.fmt is not null
+    then
+      v_result := to_number (r_bdt.basevalue
+                            ,r_bdt.fmt
+                            );
+    else
+      v_result := to_number (r_bdt.basevalue);
+    end if;
+
+    return (v_result);
+
+  end value_num;
+
+
+  function value_dat
+  (p_name  in  ero_basedata_definitions.name%type
+  )
+  return date
+  is
+    r_bdt     ero_basedata_definitions%rowtype;
+    v_result  date;
+  begin   -- value_dat
+    r_bdt := basedata_record (p_name
+                             ,ero_const.cn_datatype_d
+                             );
+
+    if r_bdt.fmt is not null
+    then
+      v_result := to_date (r_bdt.basevalue
+                          ,r_bdt.fmt
+                          );
+    else
+      v_result := to_date (r_bdt.basevalue);
+    end if;
+
+    return (v_result);
+
+  end value_dat;
+
+
+  function value_chr
+  (p_name  in  ero_basedata_definitions.name%type
+  )
+  return varchar2
+  is
+    r_bdt     ero_basedata_definitions%rowtype;
+    v_result  date;
+  begin   -- value_chr
+    r_bdt := basedata_record (p_name
+                             ,ero_const.cn_datatype_c
+                             );
+
+    return (r_bdt.basevalue);
+
+  end value_chr;
+
+end ero_basedata;
+/
+sho err

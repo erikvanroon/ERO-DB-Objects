@@ -1,0 +1,160 @@
+prompt ===> ero_email
+create or replace package body ero_email
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- ********************************************************************************
+  -- * Name module : ero_email
+  -- * Version     : 01.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Sending email
+  -- *********************************************************************************
+
+  cn_eol            constant  ero_types.st_shortstring := utl_tcp.crlf;    -- chr(13) + chr(10)
+
+
+  procedure send_mail
+  (p_recipients  in  ero_types.st_maxchar
+  ,p_subject     in  ero_types.st_maxchar
+  ,pa_message    in  at_mailbody
+  )
+  is
+    v_connection   utl_smtp.connection;
+    v_recipients   ero_types.st_maxchar;
+
+
+    procedure include_recipients
+    (p_recipients  in out  ero_types.st_maxchar
+    )
+    is
+      type at_recipient is table of integer index by ero_types.st_shortstring;
+      a_recipient      at_recipient;
+
+      v_sep_pos        integer;
+      v_recipient      ero_types.st_maxchar;
+
+    begin   -- include_recipients
+      while p_recipients is not null
+      loop
+        v_sep_pos := instr(p_recipients , ero_const.cn_semicolon);
+
+        -- put each recipient in a collection so we get rid of possible duplicate entries
+        if v_sep_pos = 0
+        then
+          v_recipient  := p_recipients;
+          p_recipients := null;
+        else
+          v_recipient  := trim(substr(p_recipients , 1 , v_sep_pos - 1));
+          p_recipients := trim(substr(p_recipients , v_sep_pos + 1));
+        end if;
+
+        if v_recipient is not null
+        then
+          a_recipient(v_recipient) := null;  -- value is of no importance, the index is all we need
+        end if;
+      end loop;
+
+      v_recipient := a_recipient.first;
+      while v_recipient is not null
+      loop
+        utl_smtp.rcpt (v_connection
+                      ,v_recipient
+                      );
+
+        p_recipients := p_recipients ||
+                        case
+                          when p_recipients is null
+                          then null
+                          else ero_const.cn_semicolon
+                        end ||
+                        v_recipient;
+
+        v_recipient  := a_recipient.next(v_recipient);
+      end loop;
+    end include_recipients;
+
+
+    procedure send_header
+    (p_name     in  ero_types.st_maxchar
+    ,p_header   in  ero_types.st_maxchar
+    )
+    is
+    begin   -- send_header
+      utl_smtp.write_data(v_connection
+                         ,p_name || ': ' || p_header || cn_eol
+                         );
+    end send_header;
+
+  begin   -- send_mail
+
+    v_connection := utl_smtp.open_connection(ero_const.cn_smtp_host, ero_const.cn_smtp_port);
+    v_recipients := p_recipients;
+
+    utl_smtp.helo (v_connection
+                  ,ero_const.cn_smtp_host
+                  );
+    utl_smtp.mail (v_connection
+                  ,ero_const.cn_mail_from
+                  );
+
+    include_recipients (p_recipients => v_recipients);
+
+    utl_smtp.open_data (v_connection);
+
+    send_header ('From'    , ero_const.cn_mail_from                    );
+    send_header ('To'      , v_recipients                              );
+    send_header ('Subject' , p_subject                                 );
+    send_header ('Date'    , to_char(sysdate,ero_const.cn_datetime_fmt));
+    send_header ('Reply-To', ero_const.cn_mail_from                    );
+
+    utl_smtp.write_data (v_connection, cn_eol);
+    if pa_message.count = 0
+    then
+      utl_smtp.write_data (v_connection, cn_eol);
+    else
+      for i_msg in 1 .. pa_message.last
+      loop
+        -- Collection may be sparse.
+        -- Consider missing rows in collection to be emty lines
+        if pa_message.exists(i_msg)
+        then
+          utl_smtp.write_data (v_connection, pa_message(i_msg));
+        end if;
+        utl_smtp.write_data (v_connection, cn_eol);
+      end loop;
+    end if;
+
+    utl_smtp.close_data (v_connection);
+    utl_smtp.quit (v_connection);
+
+  end send_mail;
+
+  procedure send_mail
+  (p_recipients  in  ero_types.st_maxchar
+  ,p_subject     in  ero_types.st_maxchar
+  ,p_message     in  ero_types.st_maxchar
+  )
+  is
+    a_mailbody    at_mailbody;
+  begin   -- send_mail
+    a_mailbody(1) := p_message;
+
+    send_mail
+      (p_recipients  => p_recipients
+      ,p_subject     => p_subject
+      ,pa_message    => a_mailbody
+      );
+  end send_mail;
+
+end ero_email;
+/
+sho err

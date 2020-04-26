@@ -1,0 +1,58 @@
+prompt ===> ero_const
+create or replace package body ero_const
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- *********************************************************************************
+  -- * Name module : ero_const
+  -- * Version     : Erik van Roon
+  -- * Author      : 02.00
+  -- * Function    : Centralised definition of constants and subtypes
+  -- *********************************************************************************
+
+
+  -- 'Constante' containing maximum length of identifiers (30 before 12.2, 128 as of 12.2, later: ??)
+  function cn_max_identifier_length
+  return integer
+  is
+    v_result   integer;
+  begin   -- cn_max_identifier_length
+    -- 
+    -- constant VER_LE_12_1, Which is supposed to tell you whether you're on a 12.1 database **or below**, 
+    -- unfortunately is useless because it doesn't exist in databases before 12.1 :(
+    -- using it results in: - 12.2 en higher : false 
+    --                      - 12.1           : true  
+    --                      - < 12.1         : invalid plsql    <= Absolutely NOT what you want
+    -- 
+    -- So, construct something using constants version and release.
+    -- And populate v_result within a Conditional Compilation contruction, because ora_max_name_len doesn't exist in db < 12.2
+    --
+    $if  dbms_db_version.version      < 12
+     or  (    dbms_db_version.version = 12
+          and dbms_db_version.release < 2
+         )
+    $then
+      -- Database prior to 12.2 so max length of identifiers is 30.
+      v_result :=  30;
+    $else
+      -- Database 12.2 or above, so max length of identifiers can be found in a constant in standard package
+      v_result := ora_max_name_len;
+    $end
+    
+    return (v_result);
+  end cn_max_identifier_length;
+  
+ 
+
+end ero_const;
+/
+sho err

@@ -1,0 +1,1398 @@
+prompt ===> ero_kalender
+create or replace package body ero_kalender
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- *********************************************************************************
+  -- * Name module : ero_kalender
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Diverse kalender-gerelateerde utilities, waaronder het bepalen
+  --                 of een datum een feest/vrije dag is en het bepalen van
+  -- *               de data waarop diverse bijzondere dagen in een bepaald jaar vallen.
+  -- *********************************************************************************
+
+  cn_foute_dag            constant   integer                   := -1;
+  cn_feestdag             constant   ero_types.st_shortstring  := 'Officiele feestdag';
+  cn_geen_feestdag        constant   ero_types.st_shortstring  := 'GEEN Officiele feestdag';
+
+  cn_placeholder_name     constant   varchar2(4)               := '<p0>';
+  cn_placeholder_param_1  constant   varchar2(4)               := '<p1>';
+  cn_placeholder_param_2  constant   varchar2(4)               := '<p2>';
+  cn_placeholder_param_3  constant   varchar2(4)               := '<p3>';
+  cn_placeholder_param_4  constant   varchar2(4)               := '<p4>';
+  cn_placeholder_param_5  constant   varchar2(4)               := '<p5>';
+  cn_placeholder_param_6  constant   varchar2(4)               := '<p6>';
+  cn_placeholder_param_7  constant   varchar2(4)               := '<p7>';
+  cn_placeholder_param_8  constant   varchar2(4)               := '<p8>';
+  cn_placeholder_param_9  constant   varchar2(4)               := '<p9>';
+
+
+  type rt_dag           is record (omschrijving      ero_types.st_maxchar
+                                  ,datum             date
+                                  ,is_feestdag       boolean
+                                  );
+
+  type at_dagen         is table of rt_dag           index by pls_integer;
+
+  type at_jaren         is table of at_dagen         index by pls_integer;
+
+
+  type rt_timeline      is record (line              ero_types.st_maxchar
+                                  ,lastdate          date
+                                  );
+
+  type at_timeline      is table of rt_timeline      index by pls_integer;
+
+
+  type rt_vorstendag    is record (vorst             ero_types.st_shortstring
+                                  ,jaar_van          integer
+                                  ,jaar_tm           integer
+                                  ,naam_vorstendag   ero_types.st_shortstring
+                                  ,maand             integer
+                                  ,dag               integer
+                                  ,shift_als_zondag  integer
+                                  );
+
+  type at_vorstendagen  is table of rt_vorstendag    index by pls_integer;
+
+
+  a_timeline       at_timeline;
+  a_jaren          at_jaren;
+  a_vorstendagen   at_vorstendagen;
+
+
+  v_len_dag_omsch   integer;
+
+
+  procedure rae
+  (p_err   in  pls_integer
+  ,p0      in  varchar2     default null
+  ,p1      in  varchar2     default null
+  ,p2      in  varchar2     default null
+  ,p3      in  varchar2     default null
+  ,p4      in  varchar2     default null
+  ,p5      in  varchar2     default null
+  ,p6      in  varchar2     default null
+  ,p7      in  varchar2     default null
+  ,p8      in  varchar2     default null
+  ,p9      in  varchar2     default null
+  )
+  is
+    cn_name   constant  ero_types.st_identifier := 'rae';
+
+    v_code  pls_integer;
+    v_msg   varchar2(200);
+  begin   -- rae
+    if p_err is null
+    or not a_err_msg.exists (p_err)
+    then
+      v_code := -20001;
+      v_msg  := 'Onbekende foutcode: '||coalesce(to_char(p_err),ero_const.cn_nullstring);
+    else
+      v_code := p_err;
+      v_msg  := a_err_msg (p_err);
+
+      v_msg  := replace (v_msg , cn_placeholder_name    , p0);
+      v_msg  := replace (v_msg , cn_placeholder_param_1 , p1);
+      v_msg  := replace (v_msg , cn_placeholder_param_2 , p2);
+      v_msg  := replace (v_msg , cn_placeholder_param_3 , p3);
+      v_msg  := replace (v_msg , cn_placeholder_param_4 , p4);
+      v_msg  := replace (v_msg , cn_placeholder_param_5 , p5);
+      v_msg  := replace (v_msg , cn_placeholder_param_6 , p6);
+      v_msg  := replace (v_msg , cn_placeholder_param_7 , p7);
+      v_msg  := replace (v_msg , cn_placeholder_param_8 , p8);
+      v_msg  := replace (v_msg , cn_placeholder_param_9 , p9);
+    end if;
+
+    ero_utl.rae (v_msg
+                ,v_code
+                );
+  end rae;
+
+
+  procedure init_vorstendagen
+  is
+    cn_name   constant  ero_types.st_identifier := 'init_vorstendagen';
+
+
+    procedure nieuwe_vorstendag
+    (p_vorst             in  ero_types.st_shortstring
+    ,p_jaar_van          in  integer
+    ,p_jaar_tm           in  integer
+    ,p_naam_vorstendag   in  ero_types.st_shortstring
+    ,p_maand             in  integer
+    ,p_dag               in  integer
+    ,p_shift_als_zondag  in  integer
+    )
+    is
+      cn_name   constant  ero_types.st_identifier := 'nieuwe_vorstendag';
+
+      r_vorstendag   rt_vorstendag;
+
+    begin   -- nieuwe_vorstendag
+      r_vorstendag.vorst             := p_vorst           ;
+      r_vorstendag.jaar_van          := p_jaar_van        ;
+      r_vorstendag.jaar_tm           := p_jaar_tm         ;
+      r_vorstendag.naam_vorstendag   := p_naam_vorstendag ;
+      r_vorstendag.maand             := p_maand           ;
+      r_vorstendag.dag               := p_dag             ;
+      r_vorstendag.shift_als_zondag  := p_shift_als_zondag;
+
+      a_vorstendagen(a_vorstendagen.count+1) := r_vorstendag;
+    end nieuwe_vorstendag;
+
+  begin   -- init_vorstendagen
+    a_vorstendagen.delete;
+
+    nieuwe_vorstendag ('Wilhelmina' , 1898 , 1947 , 'Koninginnedag' , 08 , 31 ,  0);
+    nieuwe_vorstendag ('Juliana'    , 1948 , 1979 , 'Koninginnedag' , 04 , 30 , +1);
+    nieuwe_vorstendag ('Beatrix'    , 1980 , 2013 , 'Koninginnedag' , 04 , 30 , -1);
+    nieuwe_vorstendag ('Alexander'  , 2014 , null , 'Koningsdag'    , 04 , 27 , -1);
+  end init_vorstendagen;
+
+
+  procedure init_err_msg
+  is
+    cn_name   constant  ero_types.st_identifier := 'init_err_msg';
+
+  begin   -- init_err_msg
+    a_err_msg.delete;
+
+    a_err_msg (-20100) := cn_placeholder_name||': Datum mag niet NULL zijn!';
+    a_err_msg (-20101) := cn_placeholder_name||': Geen van de parameters mag NULL zijn!';
+    a_err_msg (-20102) := cn_placeholder_name||': Ongeldige feestdag opgegeven';
+    a_err_msg (-20103) := cn_placeholder_name||': Parameter p_jaar_van mag niet NULL zijn!';
+    a_err_msg (-20104) := cn_placeholder_name||': Parameter p_type moet '||cn_placeholder_param_1||' (maand) of '||cn_placeholder_param_2||' (week) zijn';
+    a_err_msg (-20105) := cn_placeholder_name||': Parameter p_wanneer moet '||cn_placeholder_param_1||', '||cn_placeholder_param_2||' of '||cn_placeholder_param_3||' zijn';
+    a_err_msg (-20106) := cn_placeholder_name||': Ongeldige zoekrichting';
+    a_err_msg (-20107) := cn_placeholder_name||': Start_werkdag en eind_werkdag parameters moeten groter dan, of gelijk aan 1 zijn';
+    a_err_msg (-20108) := cn_placeholder_name||': Geen van de dagen van de week is gedefinieert als werkdag';
+    a_err_msg (-20109) := cn_placeholder_name||': Opgegeven referentiedatum is een andere dag van de week';
+    a_err_msg (-20110) := cn_placeholder_name||': Geen periodes in de parameter gevonden';
+    a_err_msg (-20111) := cn_placeholder_name||': Incomplete periode gevonden: van = '||cn_placeholder_param_1||' tot = '||cn_placeholder_param_2;
+    a_err_msg (-20112) := cn_placeholder_name||': Geen datums gevonden in aangeboden periodes';
+    a_err_msg (-20113) := cn_placeholder_name||': Geen timeline kunnen bepalen';
+    a_err_msg (-20114) := cn_placeholder_name||': Ongeldige dag opgegeven';
+    a_err_msg (-20115) := cn_placeholder_name||': Ongeldig weeknummer '||cn_placeholder_param_1;
+    a_err_msg (-20116) := cn_placeholder_name||': De gevraagde dag komt niet '||cn_placeholder_param_1||' keer voor in de maand '||cn_placeholder_param_2||'-'||cn_placeholder_param_3;
+    a_err_msg (-20117) := cn_placeholder_name||': Ongeldige periode, jaar van ('||cn_placeholder_param_1||') ligt na jaar_tm ('||cn_placeholder_param_2||')';
+    a_err_msg (-20118) := cn_placeholder_name||': Geen vorstendag kunnen bepalen voor '||cn_placeholder_param_1;
+  end init_err_msg;
+
+
+  procedure init_werkweek
+  is
+    cn_name   constant  ero_types.st_identifier := 'init_werkweek';
+
+  begin   -- init_werkweek
+    a_werkweek.delete;
+
+    ero_kalender.set_werkdag (ero_const.cn_d_monday   , true );
+    ero_kalender.set_werkdag (ero_const.cn_d_tuesday  , true );
+    ero_kalender.set_werkdag (ero_const.cn_d_wednesday, true );
+    ero_kalender.set_werkdag (ero_const.cn_d_thursday , true );
+    ero_kalender.set_werkdag (ero_const.cn_d_friday   , true );
+    ero_kalender.set_werkdag (ero_const.cn_d_saturday , false);
+    ero_kalender.set_werkdag (ero_const.cn_d_sunday   , false);
+  end init_werkweek;
+
+
+  function normaliseer_dagparameter
+  (p_day  in  varchar2
+  )
+  return integer
+  is
+    cn_name   constant  ero_types.st_identifier := 'normaliseer_dagparameter';
+
+    v_result integer;
+  begin   -- normaliseer_dagparameter
+    v_result := case p_day
+                  when ero_const.cn_d_monday      then to_number(ero_const.cn_d_monday   )
+                  when ero_const.cn_day_monday    then to_number(ero_const.cn_d_monday   )
+                  when ero_const.cn_d_tuesday     then to_number(ero_const.cn_d_tuesday  )
+                  when ero_const.cn_day_tuesday   then to_number(ero_const.cn_d_tuesday  )
+                  when ero_const.cn_d_wednesday   then to_number(ero_const.cn_d_wednesday)
+                  when ero_const.cn_day_wednesday then to_number(ero_const.cn_d_wednesday)
+                  when ero_const.cn_d_thursday    then to_number(ero_const.cn_d_thursday )
+                  when ero_const.cn_day_thursday  then to_number(ero_const.cn_d_thursday )
+                  when ero_const.cn_d_friday      then to_number(ero_const.cn_d_friday   )
+                  when ero_const.cn_day_friday    then to_number(ero_const.cn_d_friday   )
+                  when ero_const.cn_d_saturday    then to_number(ero_const.cn_d_saturday )
+                  when ero_const.cn_day_saturday  then to_number(ero_const.cn_d_saturday )
+                  when ero_const.cn_d_sunday      then to_number(ero_const.cn_d_sunday   )
+                  when ero_const.cn_day_sunday    then to_number(ero_const.cn_d_sunday   )
+                  else cn_foute_dag
+                end;
+    return (v_result);
+  end normaliseer_dagparameter;
+
+
+  -- bepaling datum waarop paaszondag valt.
+  function paaszondag
+  (p_jaartal  in  number
+  )
+  return date
+  is
+    cn_name   constant  ero_types.st_identifier := 'paaszondag';
+
+    v_result  date;
+
+    v_a       integer;
+    v_b       integer;
+    v_c       integer;
+    v_d       integer;
+    v_e       integer;
+    v_f       integer;
+    v_g       integer;
+    v_h       integer;
+    v_i       integer;
+    v_k       integer;
+    v_l       integer;
+    v_m       integer;
+    v_maand   integer;
+    v_pasen   integer;
+  begin   -- paaszondag
+    v_a     := mod  (p_jaartal , 19);
+    v_b     := trunc(p_jaartal / 100);
+    v_c     := mod  (p_jaartal , 100);
+    v_d     := trunc(v_b / 4);
+    v_e     := mod  (v_b , 4);
+    v_f     := trunc((v_b + 8) / 25);
+    v_g     := trunc((v_b - v_f + 1) / 3);
+    v_h     := mod  ((19 * v_a + v_b - v_d - v_g + 15) , 30);
+    v_i     := trunc(v_c / 4);
+    v_k     := mod  (v_c , 4);
+    v_l     := mod  ((32 + 2 * v_e + 2 * v_i - v_h - v_k) , 7);
+    v_m     := trunc((v_a + 11 * v_h + 22 * v_l) / 451);
+    v_maand := trunc((v_h + v_l - 7 * v_m + 114) / 31);
+    v_pasen := mod  ((v_h + v_l - 7 * v_m + 114) , 31) + 1;
+
+    v_result := (to_date(to_char(v_pasen)
+                         ||'-'||
+                         to_char(v_maand)
+                         ||'-'||
+                         to_char(p_jaartal)
+                        ,ero_const.cn_date_fmt
+                        )
+                );
+
+    return (v_result);
+  end paaszondag;
+
+
+  procedure bepaal_vorstendag
+  (p_jaar   in      integer
+  ,p_datum     out  date
+  ,p_naam      out  varchar2
+  )
+  is
+    cn_name   constant  ero_types.st_identifier := 'vorstendag';
+
+    r_vorstendag   rt_vorstendag;
+    v_datum        date;
+  begin   -- bepaal_vorstendag
+
+    for i_vorst in reverse 1 .. a_vorstendagen.count   -- reverse omdat jaar hoogst waarschijnlijk recent is
+    loop
+      if p_jaar between coalesce (a_vorstendagen(i_vorst).jaar_van, p_jaar)
+                and     coalesce (a_vorstendagen(i_vorst).jaar_tm , p_jaar)
+      then
+        r_vorstendag := a_vorstendagen(i_vorst);
+        exit;
+      end if;
+    end loop;
+
+    if r_vorstendag.naam_vorstendag is null
+    then
+      rae (-20118
+          ,cn_name
+          ,to_char(p_jaar)
+          );
+    end if;
+
+    v_datum := trunc(to_date (p_jaar,'yyyy'),'yyyy')         ;  -- start van het gewenste jaar
+    v_datum := add_months(v_datum , (r_vorstendag.maand - 1));     -- ga naar gewenste maand in het jaar
+    v_datum := v_datum + (r_vorstendag.dag   - 1)            ;     -- ga naar gewenste dag in de maand
+
+    -- als de vorstendag op een zondag valt, verplaats de dag dan het geldende aantal dagen
+    if to_char(v_datum,'d') = ero_const.cn_d_sunday
+    then
+      v_datum := v_datum + r_vorstendag.shift_als_zondag;
+    end if;
+
+    p_datum := v_datum;
+    p_naam  := r_vorstendag.naam_vorstendag;
+  end bepaal_vorstendag;
+
+
+  procedure bijzondere_dagen_lijst
+  (p_jaar  in  integer
+  )
+  is
+    cn_name   constant  ero_types.st_identifier := 'bijzondere_dagen_lijst';
+
+    cn_start_zomertijd_uur  constant number := 2/24;
+    cn_einde_zomertijd_uur  constant number := 3/24;
+
+    v_vorstendag_datum  date;
+    v_vorstendag_naam   ero_types.st_shortstring;
+
+    a_dagen    at_dagen;
+
+
+    procedure voeg_dag_toe_aan_lijst
+    (p_omschrijving  in  ero_types.st_maxchar
+    ,p_datum         in  date
+    ,p_is_feestdag   in  boolean
+    )
+    is
+      cn_name   constant  ero_types.st_identifier := 'voeg_dag_toe_aan_lijst';
+
+      r_dag      rt_dag;
+    begin   -- voeg_dag_toe_aan_lijst
+      r_dag.omschrijving := p_omschrijving;
+      r_dag.datum        := p_datum       ;
+      r_dag.is_feestdag  := p_is_feestdag ;
+      a_dagen (coalesce(a_dagen.last,0)+1) := r_dag;
+
+      v_len_dag_omsch := greatest (coalesce(v_len_dag_omsch
+                                           ,length(p_omschrijving)
+                                           )
+                                  ,length(p_omschrijving)
+                                  );
+    end voeg_dag_toe_aan_lijst;
+  begin   -- bijzondere_dagen_lijst
+    if not a_jaren.exists (p_jaar)
+    then
+      v_len_dag_omsch  := null;
+      a_dagen.delete;
+
+      bepaal_vorstendag
+        (p_jaar  => p_jaar             -- in
+        ,p_datum => v_vorstendag_datum --    out
+        ,p_naam  => v_vorstendag_naam  --    out
+        );
+
+      voeg_dag_toe_aan_lijst ('Nieuwjaarsdag'  , feestdagdatum (ero_const.cn_newyearsday         ,p_jaar)                         , true );
+      voeg_dag_toe_aan_lijst ('Goedevrijdag'   , feestdagdatum (ero_const.cn_goodfriday          ,p_jaar)                         , true );
+      voeg_dag_toe_aan_lijst ('1e Paasdag'     , feestdagdatum (ero_const.cn_eastersunday        ,p_jaar)                         , true );
+      voeg_dag_toe_aan_lijst ('2e Paasdag'     , feestdagdatum (ero_const.cn_eastermonday        ,p_jaar)                         , true );
+      voeg_dag_toe_aan_lijst (v_vorstendag_naam, v_vorstendag_datum                                                               , true );
+      voeg_dag_toe_aan_lijst ('Hemelvaartsdag' , feestdagdatum (ero_const.cn_ascensionday        ,p_jaar)                         , true );
+      voeg_dag_toe_aan_lijst ('1e Pinksterdag' , feestdagdatum (ero_const.cn_whitsubday          ,p_jaar)                         , true );
+      voeg_dag_toe_aan_lijst ('2e Pinksterdag' , feestdagdatum (ero_const.cn_whitmonday          ,p_jaar)                         , true );
+      voeg_dag_toe_aan_lijst ('1e Kerstdag'    , feestdagdatum (ero_const.cn_christmasday        ,p_jaar)                         , true );
+      voeg_dag_toe_aan_lijst ('2e Kerstdag'    , feestdagdatum (ero_const.cn_boxingday           ,p_jaar)                         , true );
+      voeg_dag_toe_aan_lijst ('Dodenherdenking', feestdagdatum (ero_const.cn_remembranceday      ,p_jaar)                         , false);
+      voeg_dag_toe_aan_lijst ('Bevrijdingsdag' , feestdagdatum (ero_const.cn_liberationday       ,p_jaar)                         , case mod(p_jaar , 5)  -- eens per 5 jaar feestdag
+                                                                                                                                      when 0
+                                                                                                                                      then true
+                                                                                                                                      else false
+                                                                                                                                    end);
+      voeg_dag_toe_aan_lijst ('Prinsjesdag'    , feestdagdatum (ero_const.cn_prinsday            ,p_jaar)                         , false);
+      voeg_dag_toe_aan_lijst ('Start Zomertijd', feestdagdatum (ero_const.cn_daylightsaving_start,p_jaar) + cn_start_zomertijd_uur, false);
+      voeg_dag_toe_aan_lijst ('Einde Zomertijd', feestdagdatum (ero_const.cn_daylightsaving_end  ,p_jaar) + cn_einde_zomertijd_uur, false);
+      voeg_dag_toe_aan_lijst ('Moederdag'      , feestdagdatum (ero_const.cn_mothersday          ,p_jaar)                         , false);
+      voeg_dag_toe_aan_lijst ('Vaderdag'       , feestdagdatum (ero_const.cn_fathersday          ,p_jaar)                         , false);
+
+      a_jaren (p_jaar) := a_dagen;
+    end if;
+  end bijzondere_dagen_lijst;
+
+
+  procedure ics_header
+  is
+    cn_name   constant  ero_types.st_identifier := 'ics_header';
+
+  begin   -- ics_header
+    ero_pl.pl ('BEGIN:VCALENDAR'                       );
+    ero_pl.pl ('PRODID:ERO BellyWare Kalender Package' );
+    ero_pl.pl ('VERSION:2.0'                           );
+    ero_pl.pl ('METHOD:PUBLISH'                        );
+    ero_pl.pl ('');
+  end ics_header;
+
+
+  procedure ics_body
+  (p_startdate          in   date
+  ,p_enddate            in   date
+  ,p_description        in   varchar2
+  ,p_alarm_voorloopmin  in   integer   default null
+  )
+  is
+    cn_name   constant  ero_types.st_identifier := 'ics_body';
+
+  begin   -- ics_body
+    ero_pl.pl ('BEGIN:VEVENT'                                                                                                                              );
+    ero_pl.pl ('DTSTART;VALUE=DATE:'||to_char(p_startdate,ero_const.cn_date_sortable_short_fmt||'T'||to_char(p_startdate,ero_const.cn_time_short_fmt)||'Z'));
+    ero_pl.pl ('DTEND;VALUE=DATE:'  ||to_char(p_enddate  ,ero_const.cn_date_sortable_short_fmt||'T'||to_char(p_enddate  ,ero_const.cn_time_short_fmt)||'Z'));
+    ero_pl.pl ('TRANSP:TRANSPARENT'                                                                                                                        );
+    ero_pl.pl ('SEQUENCE:0'                                                                                                                                );
+    ero_pl.pl ('UID:'                                                                                                                                      );
+    ero_pl.pl ('DTSTAMP;VALUE=DATE:'||to_char(sysdate    ,ero_const.cn_date_sortable_short_fmt)                                                            );
+    ero_pl.pl ('SUMMARY:'||p_description                                                                                                                   );
+    ero_pl.pl ('PRIORITY:5'                                                                                                                                );
+    ero_pl.pl ('CLASS:PUBLIC'                                                                                                                              );
+    if p_alarm_voorloopmin is not null
+    then
+      ero_pl.pl('BEGIN:VALARM'                                                                                                                             );
+      ero_pl.pl('TRIGGER:-PT'||greatest(p_alarm_voorloopmin,1)||'M'                                                                                        );
+      ero_pl.pl('ACTION:DISPLAY'                                                                                                                           );
+      ero_pl.pl('DESCRIPTION:Reminder'                                                                                                                     );
+      ero_pl.pl('END:VALARM'                                                                                                                               );
+    end if;
+    ero_pl.pl ('END:VEVENT'                                                                                                                                );
+    ero_pl.pl ('');
+  end ics_body;
+
+
+  procedure ics_footer
+  is
+    cn_name   constant  ero_types.st_identifier := 'ics_footer';
+
+  begin   -- ics_footer
+    ero_pl.pl ('END:VCALENDAR' );
+    ero_pl.pl ('');
+  end ics_footer;
+
+
+  function year_start
+  (p_year  in  integer   default extract(year from sysdate)
+  )
+  return date
+  is
+    cn_name   constant  ero_types.st_identifier := 'year_start';
+
+  begin   -- year_start
+    return (trunc(to_date(to_char(p_year,'0999')
+                         ,'yyyy'
+                         )
+                 ,'yyyy'
+                 )
+           );
+  end year_start;
+
+
+  function month_start
+  (p_peildatum  in  date  default sysdate
+  )
+  return date
+  is
+    cn_name   constant  ero_types.st_identifier := 'month_start';
+
+    v_result   date;
+  begin   -- month_start
+    v_result := trunc(p_peildatum,'month');
+
+    return (v_result);
+  end month_start;
+
+
+  function month_start
+  (p_month  in  integer  default extract(month from sysdate)
+  ,p_year   in  integer  default extract(year  from sysdate)
+  )
+  return date
+  is
+    cn_name   constant  ero_types.st_identifier := 'month_start';
+
+  begin   -- month_start
+    return (to_date(to_char(p_month,'09'  )||
+                    to_char(p_year ,'0999')
+                   ,'mmyyyy'
+                   )
+           );
+  end month_start;
+
+
+  procedure get_weeknr
+  (p_wanted_date  in      date
+  ,p_year            out  number
+  ,p_week            out  number
+  )
+  is
+    cn_name   constant  ero_types.st_identifier := 'get_weeknr';
+
+  begin   -- get_weeknr
+    p_year := to_number(to_char(p_wanted_date,'iyyy'));
+    p_week := to_number(to_char(p_wanted_date,'iw'  ));
+  end get_weeknr;
+
+
+  function get_weeknr
+  (p_wanted_date  in date
+  )
+  return  varchar2
+  is
+    cn_name   constant  ero_types.st_identifier := 'get_weeknr';
+
+    v_jaar    integer;
+    v_week    integer;
+    v_result  varchar2(200);
+  begin   -- get_weeknr
+    -- bepaal jaar en weeknummer
+    get_weeknr (p_wanted_date => p_wanted_date  -- in
+               ,p_year        => v_jaar         --    out
+               ,p_week        => v_week         --    out
+               );
+
+    -- construeer de returnvalue
+    v_result := lpad(to_char(v_jaar),4,'0')||'-'||lpad(to_char(v_week),2,'0');
+
+    return (v_result);
+  end get_weeknr;
+
+
+  procedure split_days
+  (p_duur      in      number
+  ,p_days         out  integer
+  ,p_hours        out  integer
+  ,p_minutes      out  integer
+  ,p_seconds      out  number
+  )
+  is
+    cn_name   constant  ero_types.st_identifier := 'split_days';
+
+    v_duur  number;
+  begin   -- split_days
+    v_duur := p_duur;
+    if v_duur is null
+    then
+      p_days    := null;
+      p_hours   := null;
+      p_minutes := null;
+      p_seconds := null;
+    else
+      p_days    := trunc (v_duur);
+      v_duur    := (v_duur - p_days) * 24;     -- uren
+      p_hours   := trunc(v_duur);
+      v_duur    := (v_duur - p_hours) * 60;    -- minuten
+      p_minutes := trunc(v_duur);
+      v_duur    := (v_duur - p_minutes) * 60;  -- seconden
+      p_seconds := trunc(v_duur);
+    end if;
+  end split_days;
+
+
+  function get_dayofweek
+  (p_jaar    in  number
+  ,p_weeknr  in  number
+  ,p_day     in  varchar2
+  )
+  return date
+  is
+    cn_name   constant  ero_types.st_identifier := 'get_dayofweek';
+
+    v_dag     integer  := normaliseer_dagparameter(p_day);
+    v_datum   date;
+    v_jaar    number;
+    v_week    number;
+  begin   -- get_dayofweek
+    if v_dag = cn_foute_dag
+    then
+      rae (-20114
+          ,cn_name
+          );
+    end if;
+
+    -- ga naar de gewenste dag van de week op of voor de eerste dag van het jaar
+    v_datum := year_start (p_jaar);
+    while to_number(to_char(v_datum,'d')) <> v_dag
+    loop
+      v_datum := v_datum - 1;
+    end loop;
+
+    -- als we nu niet in de eerste week van het jaar zitten, zitten we dus in de laatste
+    -- week van het vorige jaar. ga dan een week vooruit
+    get_weeknr (p_wanted_date => v_datum   -- in
+               ,p_year        => v_jaar    --    out
+               ,p_week        => v_week    --    out
+               );
+    if v_week <> 1
+    then
+      v_datum := v_datum + 7;
+    end if;
+
+    -- v_datum bevat nu de gewenste dag van de week in week 1 van het jaar
+    -- ga het gewenste aantal weken vooruit (p_weeknr-1, omdat we al in week 1 zitten)
+    v_datum := v_datum + ((p_weeknr - 1) * 7);
+
+    -- voor het geval een te hoog weeknummer is opgegeven waardoor we in een week van een
+    -- volgend jaar zijn beland, het weeknummer van de resulterende datum controleren.
+    get_weeknr (p_wanted_date => v_datum   -- in
+               ,p_year        => v_jaar    --    out
+               ,p_week        => v_week    --    out
+               );
+    if v_week <> p_weeknr   -- we zijn in een verkeerd weeknummer aangeland
+    or v_jaar <> p_jaar     -- of het juiste weeknummer, maar in het verkeerde jaar
+    then
+      rae (-20115
+          ,cn_name
+          ,coalesce(to_char(p_weeknr),ero_const.cn_nullstring)
+          );
+    end if;
+
+    return (v_datum);
+  end get_dayofweek;
+
+
+  procedure set_werkdag
+  (p_dag              in   varchar2
+  ,p_is_werkdag       in   boolean
+  ,p_referentiedatum  in   date      default null
+  )
+  is
+    cn_name   constant  ero_types.st_identifier := 'set_werkdag';
+
+    v_werkdag          varchar2(32767);
+    v_is_werkdag       boolean;
+    v_referentiedatum  date;
+  begin   -- set_werkdag
+    v_werkdag := case p_dag
+                   when ero_const.cn_day_monday    then ero_const.cn_d_monday
+                   when ero_const.cn_day_tuesday   then ero_const.cn_d_tuesday
+                   when ero_const.cn_day_wednesday then ero_const.cn_d_wednesday
+                   when ero_const.cn_day_thursday  then ero_const.cn_d_thursday
+                   when ero_const.cn_day_friday    then ero_const.cn_d_friday
+                   when ero_const.cn_day_saturday  then ero_const.cn_d_saturday
+                   when ero_const.cn_day_sunday    then ero_const.cn_d_sunday
+                   else p_dag
+                 end;
+
+    -- checks voor alternerende werkdagen (= ene week werkdag, andere week vrij)
+    -- hierbij is de referentiedatum een voorbeeld van een dag waarvoor de instelling
+    -- p_is_werkdag geldt.
+    if  p_referentiedatum is not null
+    and v_werkdag <> to_char(p_referentiedatum,'d')
+    then
+      -- referentiedatum is van een andere dag van de week dan de dag die opgegeven is
+      rae (-20109
+          ,cn_name
+          );
+    elsif p_referentiedatum is null
+    or    p_is_werkdag
+    then
+      -- geen alternerende werkdag, of
+      -- wel alternerend, en de referentiedatum is een werkdag
+      -- in beide gevallen vastleggen zoals in de parameters staat
+      v_is_werkdag      := p_is_werkdag      ;
+      v_referentiedatum := p_referentiedatum ;
+    else
+      -- het is een alternerende werkdag, en de referentiedatum is een vrije dag.
+      -- aangezien alternerende werkdagen als werkdag met een bijbehorende referentiedatum
+      -- vastgelegd moet worden, de referentiedatum met een week verzetten!
+      v_is_werkdag      := not p_is_werkdag     ;
+      ero_utl.dec (v_referentiedatum, 7);
+    end if;
+
+    a_werkweek (v_werkdag).is_werkdag      := v_is_werkdag;
+    a_werkweek (v_werkdag).referentiedatum := v_referentiedatum;
+  end set_werkdag;
+
+
+  function is_feestdag
+  (p_datum  in  date
+  )
+  return boolean
+  is
+    cn_name   constant  ero_types.st_identifier := 'is_feestdag';
+
+    a_dagen    at_dagen;
+
+    v_result   boolean;
+    v_jaar     integer;
+  begin   -- is_feestdag
+    if p_datum is null
+    then
+      rae (-20100
+          ,cn_name
+          );
+    end if;
+
+    v_result := false;
+
+    v_jaar := extract(year from p_datum);
+    bijzondere_dagen_lijst (v_jaar);
+
+    a_dagen := a_jaren(v_jaar);
+    for i_dag in 1 .. a_dagen.count
+    loop
+      if  a_dagen(i_dag).datum = p_datum
+      and a_dagen(i_dag).is_feestdag
+      then
+        v_result := true;
+        exit;
+      end if;
+    end loop;
+
+    return (v_result);
+  end is_feestdag;
+
+
+  function is_werkdag
+  (p_datum  in  date
+  )
+  return boolean
+  is
+    cn_name   constant  ero_types.st_identifier := 'is_werkdag';
+
+    v_day_of_week       varchar2(1);
+    v_result            boolean;
+    v_aantal_weken_even boolean;
+  begin   -- is_werkdag
+    if p_datum is null
+    then
+      rae (-20100
+          ,cn_name
+          );
+    end if;
+
+    -- controleer of het een weekenddag of feestdag is
+    v_day_of_week := to_char(p_datum,'d');
+
+    -- bepaal of het aantal weken tussen de te checken datum en de referentiedatum even of oneven is
+    -- (0 wordt beschouwd als even).
+    v_aantal_weken_even := (mod(abs(p_datum - coalesce(a_werkweek(v_day_of_week).referentiedatum
+                                                      ,p_datum
+                                                      )
+                                   ) / 7
+                               ,2
+                               )
+                            = 0
+                           );
+
+    v_result := (not is_feestdag (p_datum)
+                 and a_werkweek (v_day_of_week).is_werkdag
+                 and v_aantal_weken_even
+                );
+
+    return (v_result);
+  end is_werkdag;
+
+
+  function get_werkdag
+  (p_peildatum     in  date
+  ,p_zoekrichting  in  varchar2
+  ,p_werkdag       in  integer    default 1
+  )
+  return date
+  is
+    cn_name   constant  ero_types.st_identifier := 'get_werkdag';
+
+    v_delta           integer;
+    v_nxt             date;
+    v_prv             date;
+    v_result          date;
+    v_werkdag_count   integer  := 0;
+  begin   -- get_werkdag
+    -- er moet een geldige zoekrichting opgegeven zijn
+    if p_zoekrichting not in (ero_const.cn_search_forward
+                             ,ero_const.cn_search_backward
+                             ,ero_const.cn_search_nearest
+                             )
+    then
+      rae (-20106
+          ,cn_name
+          );
+    end if;
+
+    -- de werkdag (zoveelste werkdag op of na peildatum) mag niet kleiner dan 0 zijn
+    if p_werkdag < 0
+    then
+      rae (-20107
+          ,cn_name
+          );
+    end if;
+
+    -- minstens 1 van de dagen van de wwk moet als werkdag gedefinieert zijn
+    if not (   a_werkweek(ero_const.cn_d_monday   ).is_werkdag
+            or a_werkweek(ero_const.cn_d_tuesday  ).is_werkdag
+            or a_werkweek(ero_const.cn_d_wednesday).is_werkdag
+            or a_werkweek(ero_const.cn_d_thursday ).is_werkdag
+            or a_werkweek(ero_const.cn_d_friday   ).is_werkdag
+            or a_werkweek(ero_const.cn_d_saturday ).is_werkdag
+            or a_werkweek(ero_const.cn_d_sunday   ).is_werkdag
+           )
+    then
+      rae (-20108
+          ,cn_name
+          );
+    end if;
+
+    if p_zoekrichting = ero_const.cn_search_nearest
+    then
+      -- bepaal de p_werkdag'ste werkdag op of na de peildatum
+      v_nxt := get_werkdag (p_peildatum    => p_peildatum
+                           ,p_zoekrichting => ero_const.cn_search_forward
+                           ,p_werkdag      => p_werkdag
+                           );
+      -- bepaal de p_werkdag'ste werkdag op of voor de peildatum
+      v_prv := get_werkdag (p_peildatum    => p_peildatum
+                           ,p_zoekrichting => ero_const.cn_search_backward
+                           ,p_werkdag      => p_werkdag
+                           );
+      -- neem van de gevonden 2 dagen degene die het dichtst bij de peildatum ligt
+      if (trunc(p_peildatum) - trunc(v_prv))  < (trunc(v_nxt) - trunc(p_peildatum) )
+      then
+        v_result := v_prv;
+      else
+        v_result := v_nxt;
+      end if;
+
+    else
+      -- de zoekrichting bepaalt of er steeds een dag bij de peildatum opgeteld of van
+      -- afgetrokken moet worden
+      v_delta := case p_zoekrichting
+                   when ero_const.cn_search_forward   then  1
+                   when ero_const.cn_search_backward  then -1
+                 end;
+
+      v_result := p_peildatum;
+
+      -- loop zolang nog niet p_werkdag werkdagen gevonden
+      while v_werkdag_count < p_werkdag
+      loop
+        -- als de huidige te testen dag een werkdag is, verhoog dan de teller
+        -- van het aantal gevonden werkdagen
+        if is_werkdag (v_result)
+        then
+          ero_utl.inc (v_werkdag_count);
+        end if;
+        -- als nog niet p_werkdag werkdagen gevonden moeten we nog een dag verder testen
+        if v_werkdag_count < p_werkdag
+        then
+          ero_utl.inc (v_result, v_delta);
+        end if;
+      end loop;
+
+    end if;
+
+    return (v_result);
+  end get_werkdag;
+
+
+  function feestdagdatum
+  (p_feestdag  in   integer
+  ,p_jaar      in   integer
+  )
+  return date
+  is
+    cn_name   constant  ero_types.st_identifier := 'feestdagdatum';
+
+    v_jaar              varchar2(4)  := lpad(to_char(p_jaar),4,'0');
+    v_result            date;
+    v_paaszondag        date;
+    v_vorstendag_datum  date;
+    v_vorstendag_naam   ero_types.st_shortstring;
+  begin   -- feestdagdatum
+    if p_feestdag is null
+    or p_jaar     is null
+    then
+      rae (-20101
+          ,cn_name
+          );
+    elsif p_feestdag not in (ero_const.cn_newyearsday
+                            ,ero_const.cn_goodfriday
+                            ,ero_const.cn_eastersunday
+                            ,ero_const.cn_eastermonday
+                            ,ero_const.cn_royaltyday
+                            ,ero_const.cn_ascensionday
+                            ,ero_const.cn_whitsubday
+                            ,ero_const.cn_whitmonday
+                            ,ero_const.cn_christmasday
+                            ,ero_const.cn_boxingday
+                            ,ero_const.cn_remembranceday
+                            ,ero_const.cn_liberationday
+                            ,ero_const.cn_prinsday
+                            ,ero_const.cn_daylightsaving_start
+                            ,ero_const.cn_daylightsaving_end
+                            ,ero_const.cn_mothersday
+                            ,ero_const.cn_fathersday
+                            )
+    then
+      rae (-20102
+          ,cn_name
+          );
+    end if;
+
+    v_paaszondag  := paaszondag (p_jaar);
+
+    bepaal_vorstendag
+      (p_jaar  => p_jaar             -- in
+      ,p_datum => v_vorstendag_datum --    out
+      ,p_naam  => v_vorstendag_naam  --    out
+      );
+
+    v_result := case p_feestdag
+                  when ero_const.cn_newyearsday          then to_date(ero_const.cn_dat_newyearsday   ||v_jaar,'mmddyyyy')
+                  when ero_const.cn_royaltyday           then v_vorstendag_datum
+                  when ero_const.cn_remembranceday       then to_date(ero_const.cn_dat_remembranceday||v_jaar,'mmddyyyy')
+                  when ero_const.cn_liberationday        then to_date(ero_const.cn_dat_liberationday ||v_jaar,'mmddyyyy')
+                  when ero_const.cn_christmasday         then to_date(ero_const.cn_dat_christmasday  ||v_jaar,'mmddyyyy')
+                  when ero_const.cn_boxingday            then to_date(ero_const.cn_dat_boxingday     ||v_jaar,'mmddyyyy')
+                  when ero_const.cn_eastersunday         then v_paaszondag
+                  when ero_const.cn_eastermonday         then v_paaszondag + 1
+                  when ero_const.cn_goodfriday           then v_paaszondag - 2
+                  when ero_const.cn_ascensionday         then v_paaszondag + 39
+                  when ero_const.cn_whitsubday           then v_paaszondag + 49
+                  when ero_const.cn_whitmonday           then v_paaszondag + 50
+                  when ero_const.cn_prinsday             then get_day_occurance (3      ,ero_const.cn_day_tuesday, 9,p_jaar)
+                  when ero_const.cn_daylightsaving_start then get_day_occurance (cn_last,ero_const.cn_day_sunday , 3,p_jaar)
+                  when ero_const.cn_daylightsaving_end   then get_day_occurance (cn_last,ero_const.cn_day_sunday ,10,p_jaar)
+                  when ero_const.cn_mothersday           then get_day_occurance (2      ,ero_const.cn_day_sunday , 5,p_jaar)
+                  when ero_const.cn_fathersday           then get_day_occurance (3      ,ero_const.cn_day_sunday , 6,p_jaar)
+                  else null
+                end;
+    return (v_result);
+
+  end feestdagdatum;
+
+
+  procedure bijzondere_dagen
+  (p_jaar_van  in  integer
+  ,p_jaar_tm   in  integer  default null
+  )
+  is
+    cn_name   constant  ero_types.st_identifier := 'bijzondere_dagen';
+
+    cn_linesize       constant  integer := 69;
+
+    v_jaar_van  integer  := p_jaar_van;
+    v_jaar_tm   integer  := coalesce(p_jaar_tm,p_jaar_van);
+
+    a_dagen   at_dagen;
+  begin   -- bijzondere_dagen
+    if v_jaar_van is null
+    then
+      rae (-20103
+          ,cn_name
+          );
+    elsif v_jaar_tm < v_jaar_van
+    then
+      rae (-20117
+          ,cn_name
+          ,to_char(p_jaar_van)
+          ,to_char(p_jaar_tm )
+          );
+    end if;
+
+    for i_jaar in v_jaar_van .. v_jaar_tm
+    loop
+      bijzondere_dagen_lijst (i_jaar);
+      a_dagen := a_jaren(i_jaar);
+
+      ero_fill.to_screen;
+      ero_fill.set_border ('*');
+      ero_fill.set_linesize (cn_linesize);
+
+      ero_fill.borderline;
+      ero_fill.fill ('BIJZONDERE DAGEN IN HET JAAR: '||to_char(i_jaar));
+      ero_fill.borderline;
+
+      for i_dag in a_dagen.first .. a_dagen.last
+      loop
+        ero_fill.fill (rpad(a_dagen(i_dag).omschrijving,v_len_dag_omsch,' ')||': '||
+                       to_char(a_dagen(i_dag).datum,'Day dd-mm-yyyy')       ||' ' ||
+                       case
+                         when a_dagen(i_dag).is_feestdag
+                         then cn_feestdag
+                         else cn_geen_feestdag
+                       end
+                      );
+      end loop;
+
+      ero_fill.borderline;
+      ero_pl.pl;
+      ero_pl.pl;
+    end loop;
+
+  end bijzondere_dagen;
+
+
+  procedure feestdagen_ical
+  (p_jaar_van  in  integer
+  ,p_jaar_tm   in  integer  default null
+  )
+  is
+    cn_name   constant  ero_types.st_identifier := 'feestdagen_ical';
+
+    v_jaar_van  integer  := p_jaar_van;
+    v_jaar_tm   integer  := coalesce(p_jaar_tm,p_jaar_van);
+
+    a_dagen   at_dagen;
+  begin   -- feestdagen_ical
+    if v_jaar_van is null
+    then
+      rae (-20103
+          ,cn_name
+          );
+    elsif v_jaar_tm < v_jaar_van
+    then
+      rae (-20117
+          ,cn_name
+          ,to_char(p_jaar_van)
+          ,to_char(p_jaar_tm )
+          );
+    end if;
+
+    ics_header;
+
+    for i_jaar in v_jaar_van .. v_jaar_tm
+    loop
+      bijzondere_dagen_lijst (i_jaar);
+      a_dagen := a_jaren(i_jaar);
+
+      for i_dag in a_dagen.first .. a_dagen.last
+      loop
+        ics_body (p_startdate   => a_dagen(i_dag).datum
+                 ,p_enddate     => a_dagen(i_dag).datum
+                 ,p_description => a_dagen(i_dag).omschrijving
+                                   ||' '||
+                                   case
+                                     when a_dagen(i_dag).is_feestdag
+                                     then cn_feestdag
+                                     else cn_geen_feestdag
+                                   end
+                 );
+      end loop;
+
+    end loop;
+
+    ics_footer;
+
+  end feestdagen_ical;
+
+
+  procedure urenreminder_ical
+  (p_periode          in  varchar2                                      -- ero_const.cn_period_month of ero_const.cn_period_week
+  ,p_periode_grens    in  varchar2  default ero_const.cn_period_both    -- ero_const.cn_period_start, ero_const.cn_period_end of ero_const.cn_period_both
+  ,p_werkdag_nr       in  integer   default 1                           -- werkdag nummer waarop de melding moet komen, geteld vanaf het begin/eind van de periode
+  ,p_van              in  date      default trunc(sysdate)
+  ,p_tm               in  date      default add_months(trunc(sysdate),12)
+  ,p_msg              in  varchar2  default 'Urenverantwoording niet vergeten'
+  ,p_alarm            in  integer   default 0
+  )
+  is
+    cn_name   constant  ero_types.st_identifier := 'urenreminder_ical';
+
+    cn_start_uur_werkdag    constant  integer       :=  9;
+    cn_volgende_genereren   constant  varchar2(200) := 'Nieuwe reminders voor urenverantwoording genereren!';
+
+    a_custom_werkweek   at_werkweek;
+
+    v_peildatum         date;
+    v_eerste_dag        date;
+    v_laatste_dag       date;
+    v_laatste_reminder  date;
+    v_datum_van         date;
+    v_datum_tm          date;
+
+    v_start_timestamp   number := cn_start_uur_werkdag/24;
+
+  begin   -- urenreminder_ical
+    if p_periode not in (ero_const.cn_period_month
+                        ,ero_const.cn_period_week
+                        )
+    then
+      rae (-20104
+          ,cn_name
+          ,ero_const.cn_period_month
+          ,ero_const.cn_period_week
+          );
+    end if;
+
+    v_laatste_reminder := trunc(sysdate);
+
+    if p_periode_grens not in (ero_const.cn_period_start
+                              ,ero_const.cn_period_end
+                              ,ero_const.cn_period_both
+                              )
+    then
+      rae (-20105
+          ,cn_name
+          ,ero_const.cn_period_start
+          ,ero_const.cn_period_end
+          ,ero_const.cn_period_both
+          );
+    end if;
+
+    if p_van > p_tm
+    then
+      v_datum_van := least    (p_van,p_tm);
+      v_datum_tm  := greatest (p_van,p_tm);
+    end if;
+
+    ics_header;
+
+    -- bepaal eerste dag van de maand/week waarin de startdatum valt
+    if p_periode = ero_const.cn_period_month
+    then
+      v_peildatum  := trunc(month_start (p_van));
+    elsif p_periode = ero_const.cn_period_week
+    then
+      v_peildatum := trunc(p_van);
+      while not to_char(v_peildatum,'d') = ero_const.cn_d_monday
+      loop
+        ero_utl.dec (v_peildatum);
+      end loop;
+    end if;
+
+    while v_peildatum <= p_tm
+    loop
+      -- laatste 'eigen' werkdag op of voor de p_werkdag'ste 'algemene' werkdag bepalen
+      -- eerst bepalen wat de p_werkdag'ste werkdag voor de werkgever is op of na het begin van de maand/week
+      -- daarna beoordelen of dit voor de betreffende werknemer een werkdag is, en als dat niet zo is
+      -- de laatste werkdag voor de betreffende werknemer bepalen die voor de gevonden datum ligt.
+
+      -- even de huidige werkweek definitie parkeren
+      a_custom_werkweek.delete;
+      a_custom_werkweek := a_werkweek;
+      -- een standaard werkweek instellen
+      init_werkweek;
+      -- p_werkdag'ste werkdag van de maand/week bepalen
+      v_eerste_dag := get_werkdag (p_peildatum    => v_peildatum
+                                  ,p_zoekrichting => ero_const.cn_search_forward
+                                  ,p_werkdag      => p_werkdag_nr
+                                  );
+      -- oorspronkelijke werkweek definitie herstellen
+      a_werkweek.delete;
+      a_werkweek := a_custom_werkweek;
+      a_custom_werkweek.delete;
+      -- als de gevonden dag geen werkdag is voor de werknemer, dan zoeken naar de laatste dag
+      -- hiervoor die dat wel is
+      if not is_werkdag (v_eerste_dag)
+      then
+        v_eerste_dag := get_werkdag (p_peildatum    => v_eerste_dag
+                                    ,p_zoekrichting => ero_const.cn_search_backward
+                                    ,p_werkdag      => 1
+                                    );
+      end if;
+
+      -- laatste dag van de maand/week bepalen
+      v_laatste_dag := case p_periode
+                         when ero_const.cn_period_month then last_day(v_peildatum)
+                         when ero_const.cn_period_week  then v_peildatum + 6
+                       end;
+
+      -- p_werkdag'ste werkdag op of voor het eind van de maand/week bepalen
+      v_laatste_dag := get_werkdag (p_peildatum    => v_laatste_dag
+                                   ,p_zoekrichting => ero_const.cn_search_backward
+                                   ,p_werkdag      => p_werkdag_nr
+                                   );
+
+      if p_periode_grens in (ero_const.cn_period_start
+                            ,ero_const.cn_period_both
+                            )
+      and v_eerste_dag >= trunc(p_van)
+      then
+        -- voorzien van timestamp
+        ero_utl.inc (v_eerste_dag, v_start_timestamp);
+        ics_body (p_startdate         => v_eerste_dag
+                 ,p_enddate           => v_eerste_dag
+                 ,p_description       => p_msg
+                 ,p_alarm_voorloopmin => p_alarm
+                 );
+        v_laatste_reminder := greatest (v_laatste_reminder
+                                       ,v_eerste_dag
+                                       );
+      end if;
+
+      if p_periode_grens in (ero_const.cn_period_end
+                            ,ero_const.cn_period_both
+                            )
+      and v_laatste_dag <= trunc(p_tm)
+      then
+        -- voorzien van timestamp
+        ero_utl.inc (v_laatste_dag, v_start_timestamp);
+        ics_body (p_startdate         => v_laatste_dag
+                 ,p_enddate           => v_laatste_dag
+                 ,p_description       => p_msg
+                 ,p_alarm_voorloopmin => p_alarm
+                 );
+        v_laatste_reminder := greatest (v_laatste_reminder
+                                       ,v_laatste_dag
+                                       );
+      end if;
+
+      v_peildatum := case p_periode
+                       when ero_const.cn_period_month then add_months(v_peildatum,1)
+                       when ero_const.cn_period_week  then v_peildatum + 7
+                     end;
+    end loop;
+
+    -- tot slot nog 1 reminder om nieuwe urenreminders te genereren
+    -- deze komt op de laatste dag waarop een urenreminder is aangemaakt.
+    ics_body (p_startdate         => v_laatste_reminder
+             ,p_enddate           => v_laatste_reminder
+             ,p_description       => cn_volgende_genereren
+             ,p_alarm_voorloopmin => p_alarm
+             );
+
+    ics_footer;
+
+  end urenreminder_ical;
+
+
+  function get_day_occurance
+  (p_occurence  in  integer
+  ,p_day        in  varchar2
+  ,p_month      in  integer
+  ,p_year       in  integer
+  )
+  return date
+  is
+    cn_name   constant  ero_types.st_identifier := 'get_day_occurance';
+
+    v_dag       integer  := normaliseer_dagparameter(p_day);
+    v_ref_date  date;
+  begin   -- get_day_occurance
+    if v_dag = cn_foute_dag
+    then
+      rae (-20114
+          ,cn_name
+          );
+    end if;
+
+    if p_occurence = cn_last
+    then
+      -- bepaal de laatste dag van de maand waar het om gaat
+      v_ref_date := last_day(month_start (p_month
+                                         ,p_year
+                                         )
+                            );
+      -- ga naar het eerste voorkomen van de gewenste dag op of voor de laatste dag van de maand
+      while to_number(to_char(v_ref_date,'d')) <> v_dag
+      loop
+        v_ref_date := v_ref_date - 1;
+      end loop;
+
+    else
+
+      -- bepaal de eerste dag van de maand waar het om gaat
+      v_ref_date := month_start (p_month
+                                ,p_year
+                                );
+
+      -- ga naar het eerste voorkomen van de gewenste dag in de maand
+      while to_number(to_char(v_ref_date,'d')) <> v_dag
+      loop
+        v_ref_date := v_ref_date + 1;
+      end loop;
+
+      -- spring p_occurence-1 weken vooruit (-1 omdat we al bij het eerste voorkomen zitten)
+      v_ref_date := v_ref_date + ((p_occurence - 1) * 7);
+
+      -- controleer of we nog in de juiste maand zitten. dit is bijvoorbeeld niet zo als om de
+      -- 8e woensdag in mei is gevraagd, en afhankelijk van de maand soms wel, en soms niet als
+      -- om het 5e voorkomen van een bepaalde dag in een bepaalde maand wordt gevraagd
+      if to_number(to_char(v_ref_date,'yyyy')) <> p_year
+      or to_number(to_char(v_ref_date,'mm'  )) <> p_month
+      then
+        rae (-20116
+            ,cn_name
+            ,to_char(p_occurence)
+            ,to_char(p_month    )
+            ,to_char(p_year     )
+            );
+      end if;
+    end if;
+
+    return (v_ref_date);
+  end get_day_occurance;
+
+  -- Functie retourneert een string die het verschil tussen de opgegeven begin en eind datumtijd
+  -- bevat als uren:minuten:seconden.
+  -- Beide parameters hebben een default van SYSDATE
+  function timedif
+  (p_datumtijd_1 in date default sysdate
+  ,p_datumtijd_2 in date default sysdate
+  )
+  return ero_types.st_format
+  is
+
+    cn_sysdate        constant  date                     := sysdate;
+    cn_time_spearator constant  ero_types.st_singlechar  := ero_const.cn_colon;
+    cn_format         constant  ero_types.st_format      := '09';
+
+    v_result    ero_types.st_format;
+    v_duur      number ;
+    v_days      integer;
+    v_hours     integer;
+    v_minutes   integer;
+    v_seconds   number ;
+
+
+    function format_number
+    (p_nummer  in  integer
+    )
+    return ero_types.st_format
+    is
+    begin   -- format_number
+      return (trim(to_char(p_nummer
+                          ,cn_format
+                          )
+                  )
+             );
+    end format_number;
+
+
+  begin   -- timedif
+    v_duur := abs (coalesce(p_datumtijd_2,cn_sysdate) - coalesce(p_datumtijd_1,cn_sysdate));
+
+    split_days (p_duur    => v_duur       -- in   number
+               ,p_days    => v_days       -- out  integer
+               ,p_hours   => v_hours      -- out  integer
+               ,p_minutes => v_minutes    -- out  integer
+               ,p_seconds => v_seconds    -- out  number
+               );
+
+    v_seconds := round(v_seconds);
+
+    if v_days > 0
+    then
+      v_result := trim(to_char(v_days)) || ' + ';
+    end if;
+
+    v_result  := v_result                  ||
+                 format_number(v_hours)    ||cn_time_spearator||
+                 format_number(v_minutes)  ||cn_time_spearator||
+                 format_number(v_seconds)
+                 ;
+
+    return (v_result);
+  end timedif;
+
+
+  procedure reinitialise_package
+  is
+    cn_name   constant  ero_types.st_identifier := 'reinitialise_package';
+
+  begin   -- reinitialise_package
+    a_jaren       .delete;
+    a_timeline    .delete;
+    a_vorstendagen.delete;
+
+    init_err_msg;
+    init_werkweek;
+    init_vorstendagen;
+
+    v_len_dag_omsch := null;
+  end reinitialise_package;
+
+
+begin
+  reinitialise_package;
+
+end ero_kalender;
+/
+sho err

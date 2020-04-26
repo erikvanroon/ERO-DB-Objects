@@ -1,0 +1,67 @@
+prompt ===> ero_basedata
+create or replace package ero_basedata
+authid definer
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- *********************************************************************************
+  -- * Name module : ero_basedata
+  -- * Version     : Erik van Roon
+  -- * Author      : 02.00
+  -- * Function    : Functionality for retrieving basedata from basedata_definitions table
+  -- *********************************************************************************
+
+  cn_package_name     constant   ero_types.st_identifier                 := $$plsql_unit;
+  
+  cn_char             constant   ero_basedata_definitions.datatype%type  := ero_const.cn_datatype_c;
+  cn_num              constant   ero_basedata_definitions.datatype%type  := ero_const.cn_datatype_n;
+  cn_date             constant   ero_basedata_definitions.datatype%type  := ero_const.cn_datatype_d;
+
+
+  -- Used in triggers to check whether datatype, size, precision and value are all in complience with each other
+  procedure check_datatype
+  (p_bdt_row       in  ero_basedata_definitions%rowtype
+  );
+
+
+  -- Returns a basedata value as stored, regardless of its defined datatype
+  function value_any
+  (p_name  in  ero_basedata_definitions.name%type
+  )
+  return ero_basedata_definitions.basevalue%type
+  ;
+
+
+  -- Returns a basedata value that is defined as datatype number, and returns it as a number
+  function value_num
+  (p_name  in  ero_basedata_definitions.name%type
+  )
+  return number
+  ;
+
+
+  function value_dat
+  (p_name  in  ero_basedata_definitions.name%type
+  )
+  return date
+  ;
+
+
+  function value_chr
+  (p_name  in  ero_basedata_definitions.name%type
+  )
+  return varchar2
+  ;
+
+end ero_basedata;
+/
+sho err

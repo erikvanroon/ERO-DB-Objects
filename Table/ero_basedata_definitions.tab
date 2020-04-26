@@ -1,0 +1,11 @@
+prompt ===> ero_basedata_definitions
+create table ero_basedata_definitions
+(name          varchar2(30)                  not null
+,datatype      varchar2(1)      DEFAULT 'C'  not null
+,datalength    number(5,0)
+,dataprecision number(3,0)
+,fmt           varchar2(30)
+,basevalue     varchar2(4000)
+,description   varchar2(4000)
+);
+

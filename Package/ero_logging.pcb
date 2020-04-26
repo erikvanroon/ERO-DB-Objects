@@ -1,0 +1,250 @@
+prompt ===> ero_logging
+create or replace package body ero_logging
+is
+
+  -------------------------------------------------------------------------
+  --                                                                     --
+  --       _/_/_/_/              _/_/_/      _/_/      _/_/_/    _/_/_/  --
+  --      _/        _/      _/  _/    _/  _/    _/  _/        _/         --
+  --     _/_/_/    _/      _/  _/_/_/    _/    _/  _/          _/_/      --
+  --    _/          _/  _/    _/    _/  _/    _/  _/              _/     --
+  --   _/_/_/_/      _/      _/    _/    _/_/      _/_/_/  _/_/_/        --
+  --                                                                     --
+  -------------------------------------------------------------------------
+
+  -- *********************************************************************************
+  -- * Name module : ero_logging
+  -- * Version     : 02.00
+  -- * Author      : Erik van Roon
+  -- * Function    : Functionality for logging to table ero_log
+  -- *********************************************************************************
+
+  cn_info_desc       constant  ero_types.st_shortstring   := 'INFO'   ;
+  cn_warning_desc    constant  ero_types.st_shortstring   := 'WARNING';
+  cn_error_desc      constant  ero_types.st_shortstring   := 'ERROR'  ;
+  cn_fatalerror_desc constant  ero_types.st_shortstring   := 'FATAL'  ;
+  cn_debug_desc      constant  ero_types.st_shortstring   := 'DEBUG'  ;
+
+  -- Global variabel to hold the current state (on or off) of logging debug messages
+  v_debugging                  boolean               := false    ;
+
+
+  function type_description
+  (p_logtype  in  ero_log.logtype%type
+  )
+  return varchar2
+  is
+  begin   -- type_description
+    return (case p_logtype
+              when cn_info       then cn_info_desc
+              when cn_warning    then cn_warning_desc
+              when cn_error      then cn_error_desc
+              when cn_fatalerror then cn_fatalerror_desc
+              when cn_debug      then cn_debug_desc
+              else '???????'
+            end
+           );
+  end type_description;
+
+
+  procedure debug_switch
+  (p_debug  in  boolean
+  )
+  is
+  begin   -- debug_switch
+    v_debugging := p_debug;
+  end debug_switch;
+
+
+  function debugging_turned_on
+  return boolean
+  is
+  begin   -- debugging_turned_on
+    return (v_debugging);
+  end debugging_turned_on;
+
+
+  procedure write_log
+  (p_logtype    in  ero_log.logtype%type
+  ,p_message    in  ero_log.message%type
+  ,p_logged_by  in  ero_log.logged_by%type   default user
+  )
+  is
+    pragma autonomous_transaction;
+  begin   -- write_log
+    insert
+    into   ero_log
+           (logtype
+           ,message
+           ,logged_by
+           )
+    values (p_logtype
+           ,p_message
+           ,coalesce(p_logged_by , user)
+           );
+
+    commit;
+  end write_log;
+
+
+  procedure log_info
+  (p_message   in  ero_log.message%type
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  )
+  is
+  begin   -- log_info
+    write_log (p_logtype   => cn_info
+              ,p_message   => p_message
+              ,p_logged_by => coalesce(p_logged_by , user)
+              );
+  end log_info;
+
+
+  procedure log_warning
+  (p_message   in  ero_log.message%type
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  )
+  is
+  begin   -- log_warning
+    write_log (p_logtype   => cn_warning
+              ,p_message   => p_message
+              ,p_logged_by => coalesce(p_logged_by , user)
+              );
+  end log_warning;
+
+
+  procedure log_error
+  (p_message   in  ero_log.message%type
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  )
+  is
+  begin   -- log_error
+    write_log (p_logtype   => cn_error
+              ,p_message   => p_message
+              ,p_logged_by => coalesce(p_logged_by , user)
+              );
+  end log_error;
+
+
+  procedure log_fatalerror
+  (p_message   in  ero_log.message%type
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  )
+  is
+  begin   -- log_fatalerror
+    write_log (p_logtype   => cn_fatalerror
+              ,p_message   => p_message
+              ,p_logged_by => coalesce(p_logged_by , user)
+              );
+  end log_fatalerror;
+
+
+  procedure log_debug
+  (p_message   in  ero_log.message%type
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  )
+  is
+  begin   -- log_debug
+    if v_debugging
+    then
+      write_log (p_logtype   => cn_debug
+                ,p_message   => p_message
+                ,p_logged_by => coalesce(p_logged_by , user)
+                );
+    end if;
+  end log_debug;
+
+
+  procedure clear_log
+  (p_logtype   in  ero_log.logtype%type    default '%'
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  )
+  is
+    pragma autonomous_transaction;
+  begin   -- clear_log
+    delete
+    from   ero_log
+    where  logtype   like coalesce(p_logtype   , '%')
+      and  logged_by like coalesce(p_logged_by , '%')
+    ;
+
+    commit;
+  end clear_log;
+
+
+  procedure getlog
+  (p_logtype   in  ero_log.logtype%type    default '%'
+  ,p_logged_by in  ero_log.logged_by%type  default user
+  ,p_linesize  in  integer                 default null
+  )
+  is
+    cn_linesize    constant  integer       := 70 ;
+    cn_frame_chr   constant  varchar2(1)   := '*';
+
+    cursor c_log (cp_logtype   ero_log.logtype%type
+                 ,cp_logged_by ero_log.logged_by%type
+                 )
+    is
+    select logged_at
+    ,      logtype
+    ,      message
+    from   ero_log
+    where  logtype   like cp_logtype
+      and  logged_by like cp_logged_by
+    order by id;
+
+    type at_log is table of c_log%rowtype  index by pls_integer;
+    a_log     at_log;
+
+    v_linesize  integer      ;
+    v_line      varchar2(200);
+  begin   -- getlog
+    v_linesize := greatest (28    -- Minimum linesize because of headers
+                           ,coalesce(p_linesize,cn_linesize)
+                           );
+
+    v_line     := rpad(cn_frame_chr,v_linesize,cn_frame_chr);
+
+    open  c_log (coalesce(p_logtype  ,'%')
+                ,coalesce(p_logged_by,'%')
+                );
+    fetch c_log
+    bulk collect
+    into  a_log;
+    close c_log;
+
+    ero_pl.pl (v_line);
+    if a_log.count > 0
+    then
+      ero_pl.pl (substr('Time     Logtype Log message'         ,1,v_linesize));
+      ero_pl.pl (substr('======== ======= '||rpad('=',4000,'='),1,v_linesize));
+
+      for i_log in a_log.first .. a_log.last
+      loop
+        ero_pl.pl (substr(to_char(a_log(i_log).logged_at,ero_const.cn_time_short_fmt)
+                          ||' '||
+                          type_description (a_log(i_log).logtype)
+                          ||' '||
+                          a_log(i_log).message
+                         ,1
+                         ,v_linesize
+                         )
+                  );
+      end loop;
+    else
+      ero_pl.pl (cn_frame_chr||' '||
+                 RPAD('NO LOGGING FOUND'
+                     ,v_linesize - 4
+                     ,' '
+                     )||
+                 ' '||cn_frame_chr
+                );
+    end if;
+    ero_pl.pl (v_line);
+  end getlog;
+
+end ero_logging;
+/
+
+sho err
+
