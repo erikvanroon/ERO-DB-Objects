@@ -1,9 +1,9 @@
 prompt ===> ero_log
 create table ero_log
-(id           number                           not null
-,logged_by    varchar2(128)   default user     not null
-,logged_at    date            default sysdate  not null
-,logtype      varchar2(1)     default 'I'      not null
+(id           number          default on null ero_log_seq.nextval     not null
+,logged_by    varchar2(128)   default user                            not null
+,logged_at    date            default sysdate                         not null
+,logtype      varchar2(1)     default 'I'                             not null
 ,message      varchar2(4000)
 );
 
