@@ -1,8 +1,8 @@
-prompt ===> ero_basedata_definitions
+prompt ===> ero_setting_values
 create or replace trigger ero_bdt_brui
 before insert
 or     update
-on ero_basedata_definitions
+on ero_setting_values
 for each row
 declare
 
@@ -21,7 +21,7 @@ declare
   -- * Version     : 02.00
   -- * Author      : Erik van Roon
   -- *********************************************************************************
-  r_bdt   ero_basedata_definitions%rowtype;
+  r_bdt   ero_setting_values%rowtype;
 begin
 
   :new.name     := upper(:new.name    );
@@ -35,7 +35,7 @@ begin
   r_bdt.basevalue     := :new.basevalue    ;
   r_bdt.description   := :new.description  ;
 
-  ero_basedata.check_datatype (p_bdt_row => r_bdt);
+  ero_settings.check_datatype (p_bdt_row => r_bdt);
 
 end;
 /

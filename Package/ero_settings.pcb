@@ -1,5 +1,5 @@
-prompt ===> ero_basedata
-create or replace package body ero_basedata
+prompt ===> ero_settings
+create or replace package body ero_settings
 is
 
   -------------------------------------------------------------------------
@@ -13,22 +13,22 @@ is
   -------------------------------------------------------------------------
 
   -- *********************************************************************************
-  -- * Name module : ero_basedata
+  -- * Name module : ero_settings
   -- * Version     : Erik van Roon
   -- * Author      : 02.00
-  -- * Function    : Functionality for retrieving basedata from basedata_definitions table
+  -- * Function    : Functionality for retrieving setting values from ero_setting_values table
   -- *********************************************************************************
 
 
   function basedata_record
-  (p_name      in  ero_basedata_definitions.name%type
-  ,p_datatype  in  ero_basedata_definitions.datatype%type  default '%'
+  (p_name      in  ero_setting_values.name%type
+  ,p_datatype  in  ero_setting_values.datatype%type  default '%'
   )
-  return ero_basedata_definitions%rowtype
+  return ero_setting_values%rowtype
   result_cache
   is
-    cursor c_bdt (cp_name     ero_basedata_definitions.name%type
-                 ,cp_datatype ero_basedata_definitions.datatype%type
+    cursor c_bdt (cp_name     ero_setting_values.name%type
+                 ,cp_datatype ero_setting_values.datatype%type
                  )
     is
     select name
@@ -38,7 +38,7 @@ is
     ,      fmt
     ,      basevalue
     ,      description
-    from   ero_basedata_definitions
+    from   ero_setting_values
     where  name      = upper(cp_name)
       and  datatype  like cp_datatype
     ;
@@ -46,7 +46,7 @@ is
     r_bdt   c_bdt%rowtype;
 
     v_found   boolean;
-    r_result  ero_basedata_definitions%rowtype;
+    r_result  ero_setting_values%rowtype;
   begin   -- basedata_record
     open  c_bdt (p_name
                 ,p_datatype
@@ -85,7 +85,7 @@ is
 
 
   procedure check_datatype
-  (p_bdt_row       in  ero_basedata_definitions%rowtype
+  (p_bdt_row       in  ero_setting_values%rowtype
   )
   is
     v_dec_pos     integer;
@@ -176,11 +176,11 @@ is
 
 
   function value_any
-  (p_name  in  ero_basedata_definitions.name%type
+  (p_name  in  ero_setting_values.name%type
   )
-  return ero_basedata_definitions.basevalue%type
+  return ero_setting_values.basevalue%type
   is
-    r_bdt   ero_basedata_definitions%rowtype;
+    r_bdt   ero_setting_values%rowtype;
   begin   -- value_any
     r_bdt  := basedata_record (p_name);
 
@@ -190,11 +190,11 @@ is
 
 
   function value_num
-  (p_name  in  ero_basedata_definitions.name%type
+  (p_name  in  ero_setting_values.name%type
   )
   return number
   is
-    r_bdt     ero_basedata_definitions%rowtype;
+    r_bdt     ero_setting_values%rowtype;
     v_result  number;
   begin   -- value_num
     r_bdt := basedata_record (p_name
@@ -216,11 +216,11 @@ is
 
 
   function value_dat
-  (p_name  in  ero_basedata_definitions.name%type
+  (p_name  in  ero_setting_values.name%type
   )
   return date
   is
-    r_bdt     ero_basedata_definitions%rowtype;
+    r_bdt     ero_setting_values%rowtype;
     v_result  date;
   begin   -- value_dat
     r_bdt := basedata_record (p_name
@@ -242,11 +242,11 @@ is
 
 
   function value_chr
-  (p_name  in  ero_basedata_definitions.name%type
+  (p_name  in  ero_setting_values.name%type
   )
   return varchar2
   is
-    r_bdt     ero_basedata_definitions%rowtype;
+    r_bdt     ero_setting_values%rowtype;
     v_result  date;
   begin   -- value_chr
     r_bdt := basedata_record (p_name
@@ -257,6 +257,6 @@ is
 
   end value_chr;
 
-end ero_basedata;
+end ero_settings;
 /
 sho err

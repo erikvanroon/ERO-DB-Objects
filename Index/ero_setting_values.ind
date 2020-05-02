@@ -1,0 +1,6 @@
+prompt ===>  ero_setting_values
+create unique index ero_setting_values_pk
+on ero_setting_values
+   (name
+   );
+

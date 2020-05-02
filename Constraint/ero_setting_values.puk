@@ -1,6 +1,6 @@
-prompt ===>  ero_basedata_definitions
+prompt ===>  ero_setting_values
 prompt primary key constraint ero_bdt_pk
-alter table ero_basedata_definitions
+alter table ero_setting_values
 add (constraint ero_bdt_pk
      primary key (name)
      using index

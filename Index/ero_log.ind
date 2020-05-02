@@ -1,0 +1,7 @@
+prompt ===> ero_log
+create unique index ero_log_pk 
+on ero_log
+     (id
+     )
+;
+

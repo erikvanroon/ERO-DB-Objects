@@ -1,5 +1,5 @@
-prompt ===> ero_basedata_definitions
-create table ero_basedata_definitions
+prompt ===> ero_setting_values
+create table ero_setting_values
 (name          varchar2(30)                  not null
 ,datatype      varchar2(1)      DEFAULT 'C'  not null
 ,datalength    number(5,0)

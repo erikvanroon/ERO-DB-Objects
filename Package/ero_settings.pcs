@@ -1,5 +1,5 @@
-prompt ===> ero_basedata
-create or replace package ero_basedata
+prompt ===> ero_settings
+create or replace package ero_settings
 authid definer
 is
 
@@ -14,54 +14,54 @@ is
   -------------------------------------------------------------------------
 
   -- *********************************************************************************
-  -- * Name module : ero_basedata
+  -- * Name module : ero_settings
   -- * Version     : Erik van Roon
   -- * Author      : 02.00
-  -- * Function    : Functionality for retrieving basedata from basedata_definitions table
+  -- * Function    : Functionality for retrieving setting values from ero_setting_values table
   -- *********************************************************************************
 
-  cn_package_name     constant   ero_types.st_identifier                 := $$plsql_unit;
+  cn_package_name     constant   ero_types.st_identifier           := $$plsql_unit;
   
-  cn_char             constant   ero_basedata_definitions.datatype%type  := ero_const.cn_datatype_c;
-  cn_num              constant   ero_basedata_definitions.datatype%type  := ero_const.cn_datatype_n;
-  cn_date             constant   ero_basedata_definitions.datatype%type  := ero_const.cn_datatype_d;
+  cn_char             constant   ero_setting_values.datatype%type  := ero_const.cn_datatype_c;
+  cn_num              constant   ero_setting_values.datatype%type  := ero_const.cn_datatype_n;
+  cn_date             constant   ero_setting_values.datatype%type  := ero_const.cn_datatype_d;
 
 
   -- Used in triggers to check whether datatype, size, precision and value are all in complience with each other
   procedure check_datatype
-  (p_bdt_row       in  ero_basedata_definitions%rowtype
+  (p_bdt_row       in  ero_setting_values%rowtype
   );
 
 
   -- Returns a basedata value as stored, regardless of its defined datatype
   function value_any
-  (p_name  in  ero_basedata_definitions.name%type
+  (p_name  in  ero_setting_values.name%type
   )
-  return ero_basedata_definitions.basevalue%type
+  return ero_setting_values.basevalue%type
   ;
 
 
   -- Returns a basedata value that is defined as datatype number, and returns it as a number
   function value_num
-  (p_name  in  ero_basedata_definitions.name%type
+  (p_name  in  ero_setting_values.name%type
   )
   return number
   ;
 
 
   function value_dat
-  (p_name  in  ero_basedata_definitions.name%type
+  (p_name  in  ero_setting_values.name%type
   )
   return date
   ;
 
 
   function value_chr
-  (p_name  in  ero_basedata_definitions.name%type
+  (p_name  in  ero_setting_values.name%type
   )
   return varchar2
   ;
 
-end ero_basedata;
+end ero_settings;
 /
 sho err

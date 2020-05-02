@@ -64,32 +64,37 @@ prompt ============
 
 prompt Tables
 prompt ======
-@@ ..\Table\ero_basedata_definitions.tab
+@@ ..\Table\ero_setting_values.tab
 @@ ..\Table\ero_gtt_dir_list.tab 
 @@ ..\Table\ero_log.tab
 
 
 Prompt JavaCode
-Prompt ============================================== 
+Prompt ========
 @@ ..\Java\EroDirList.jav
 
 
+prompt Indexes
+prompt =======
+@@ ..\Index\ero_setting_values.ind
+@@ ..\Index\ero_log.ind
+
 prompt PK and UK Constraints
 prompt =====================
-@@ ..\Constraint\ero_basedata_definitions.puk
+@@ ..\Constraint\ero_setting_values.puk
 @@ ..\Constraint\ero_log.puk
 
 
 prompt Check Constraints
-prompt ===========
-@@ ..\Constraint\ero_basedata_definitions.chk
+prompt =================
+@@ ..\Constraint\ero_setting_values.chk
 @@ ..\Constraint\ero_log.chk
 
 
 prompt Package specs
 prompt =============
 @@ ..\Package\ero_logging.pcs
-@@ ..\Package\ero_basedata.pcs
+@@ ..\Package\ero_settings.pcs
 @@ ..\Package\ero_callstack.pcs
 @@ ..\Package\ero_directory.pcs 
 @@ ..\Package\ero_email.pcs
@@ -109,7 +114,7 @@ prompt =============
 
 prompt Package bodies
 prompt ==============
-@@ ..\Package\ero_basedata.pcb
+@@ ..\Package\ero_settings.pcb
 @@ ..\Package\ero_callstack.pcb
 @@ ..\Package\ero_const.pcb
 @@ ..\Package\ero_directory.pcb 
@@ -141,13 +146,13 @@ prompt ==========
 
 prompt Triggers
 prompt ========
-@@ ..\Trigger\ero_basedata_definitions.trg
+@@ ..\Trigger\ero_setting_values.trg
 @@ ..\Trigger\ero_log.trg
 
 
 prompt SQL Scripts
 prompt ===========
-@@ ..\DML\ero_basedata_definitions.sql
+@@ ..\DML\ero_setting_values.sql
 
 --@@ .\synonym.sql          -- Only create Public synonyms on private db's
 

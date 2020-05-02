@@ -1,19 +1,19 @@
 declare
 
   procedure ins
-  (p_name            in  ero_basedata_definitions.name         %type
-  ,p_datatype        in  ero_basedata_definitions.datatype     %type
-  ,p_datalength      in  ero_basedata_definitions.datalength   %type
-  ,p_dataprecision   in  ero_basedata_definitions.dataprecision%type
-  ,p_fmt             in  ero_basedata_definitions.fmt          %type
-  ,p_basevalue       in  ero_basedata_definitions.basevalue    %type
-  ,p_description     in  ero_basedata_definitions.description  %type
+  (p_name            in  ero_setting_values.name         %type
+  ,p_datatype        in  ero_setting_values.datatype     %type
+  ,p_datalength      in  ero_setting_values.datalength   %type
+  ,p_dataprecision   in  ero_setting_values.dataprecision%type
+  ,p_fmt             in  ero_setting_values.fmt          %type
+  ,p_basevalue       in  ero_setting_values.basevalue    %type
+  ,p_description     in  ero_setting_values.description  %type
   )
   is
     cn_nullstring  constant   varchar2(30)  := '[[Null]]';
   begin   -- ins
     insert
-    into   ero_basedata_definitions
+    into   ero_setting_values
            (name         
            ,datatype     
            ,datalength   

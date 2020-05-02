@@ -1,6 +1,6 @@
-prompt ===> ero_basedata_definitions
+prompt ===> ero_setting_values
 prompt check constraint ero_bdt_chk001
-alter table ero_basedata_definitions
+alter table ero_setting_values
 add (constraint ero_bdt_chk001
      check (-- datatype may only be C, N or D
             datatype IN ('C'  -- char/varchar2
@@ -11,7 +11,7 @@ add (constraint ero_bdt_chk001
     );
 
 prompt check constraint ero_bdt_chk002
-alter table ero_basedata_definitions
+alter table ero_setting_values
 add (constraint ero_bdt_chk002
      check (-- If datatype is Date, datalength and dataprecision must be empty
             datatype          <> 'D'   -- date
@@ -24,7 +24,7 @@ add (constraint ero_bdt_chk002
     );
 
 prompt check constraint ero_bdt_chk003
-alter table ero_basedata_definitions
+alter table ero_setting_values
 add (constraint ero_bdt_chk003
      check (-- If datatype is (var)char, datalength must contain a value
             -- and dataprecision and fmt must be empty
@@ -39,7 +39,7 @@ add (constraint ero_bdt_chk003
     );
 
 prompt check constraint ero_bdt_chk004
-alter table ero_basedata_definitions
+alter table ero_setting_values
 add (constraint ero_bdt_chk004
      check (-- If datalength contains a value, it must be more than 0
             coalesce(datalength,1) > 0
@@ -47,7 +47,7 @@ add (constraint ero_bdt_chk004
     );
 
 prompt check constraint ero_bdt_chk005
-alter table ero_basedata_definitions
+alter table ero_setting_values
 add (constraint ero_bdt_chk005
      check (-- If dataprecision contains a value, datalength must contain a value too
             -- and dataprecision must be between 0 and datalength

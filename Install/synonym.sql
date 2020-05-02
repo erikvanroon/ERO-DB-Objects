@@ -19,7 +19,7 @@ prompt Grants
 prompt ==========================
 
 -- packages
-grant execute on ero_basedata               to public;
+grant execute on ero_settings               to public;
 grant execute on ero_callstack              to public;
 grant execute on ero_const                  to public;
 grant execute on ero_directory              to public;
@@ -45,7 +45,7 @@ grant execute on ero_tabledata_bulkinserts to public;
 
 
 -- tables
-grant all     on ero_basedata_definitions  to public;
+grant all     on ero_setting_values        to public;
 grant all     on ero_gtt_dir_list          to public;
 grant all     on ero_log                   to public;
 
@@ -77,7 +77,7 @@ prompt Public Synonyms
 prompt ==========================
 
 -- packages
-create public synonym ero_basedata              for ero_basedata            ;
+create public synonym ero_settings              for ero_settings            ;
 create public synonym ero_callstack             for ero_callstack           ;
 create public synonym ero_const                 for ero_const               ;
 create public synonym ero_directory             for ero_directory           ;
@@ -102,7 +102,7 @@ create public synonym erolog                    for erolog                  ;
 create public synonym ero_tabledata_bulkinserts for ero_tabledata_bulkinserts;
 
 -- tables
-create public synonym ero_basedata_definitions  for ero_basedata_definitions;
+create public synonym ero_setting_values        for ero_setting_values      ;
 create public synonym ero_gtt_dir_list          for ero_gtt_dir_list        ;
 create public synonym ero_log                   for ero_log                 ;
 

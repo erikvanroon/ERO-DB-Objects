@@ -53,7 +53,7 @@ is
   result_cache
   is
   begin   -- file_indicator
-    return (ero_basedata.value_chr ('dirlist_file_indicator'));
+    return (ero_settings.value_chr ('dirlist_file_indicator'));
   end file_indicator;
   
 
@@ -62,7 +62,7 @@ is
   result_cache
   is
   begin   -- dir_indicator
-    return (ero_basedata.value_chr ('dirlist_dir_indicator'));
+    return (ero_settings.value_chr ('dirlist_dir_indicator'));
   end dir_indicator;
   
 

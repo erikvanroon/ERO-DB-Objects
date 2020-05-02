@@ -149,7 +149,7 @@ declare
     add_object (cn_procedure , 'erolog'                   );
     add_object (cn_procedure , 'ero_tabledata_bulkinserts');
                              
-    add_object (cn_package   , 'ero_basedata'             );
+    add_object (cn_package   , 'ero_settings'             );
     add_object (cn_package   , 'ero_callstack'            );
     add_object (cn_package   , 'ero_directory'            );
     add_object (cn_package   , 'ero_email'                );
@@ -171,7 +171,7 @@ declare
 
     add_object (cn_javaclass , '"EroDirList"'             );
 
-    add_object (cn_table     , 'ero_basedata_definitions' );
+    add_object (cn_table     , 'ero_setting_values'       );
     add_object (cn_table     , 'ero_gtt_dir_list'         );
     add_object (cn_table     , 'ero_log'                  );
                              
